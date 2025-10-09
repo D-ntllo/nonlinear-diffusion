@@ -121,7 +121,6 @@ def _solve_sigma_bessel(n: int, kappa: float, f: np.ndarray, r: np.ndarray, R0: 
 # ---- Main: compute second order via integrals (no BVPs) ----
 def compute_second_order(
     F,
-    gamma: float,
     D: Optional[float] = None,      # (unused; equations written with Khat0)
     *,
     modes=(0, 2),
@@ -132,7 +131,7 @@ def compute_second_order(
     max_nodes: int = 300000         # kept for API parity; unused
 ) -> SecondOrderAll:
 
-    R0 = float(F.R0); Z = float(F.Z); P = float(F.P); m0 = float(F.m0); Khat0 = float(F.Khat0)
+    R0 = float(F.R0); Z = float(F.Z); P = float(F.P); m0 = float(F.m0); Khat0 = float(F.Khat0); gamma = float(F.gamma)
     # Forcings q_{S,n}(r)
     Qf = make_forcings_A_B_func(F)
 

@@ -1,3 +1,4 @@
+'''
 import numpy as np
 from dataclasses import dataclass
 from typing import Callable, Dict, Tuple
@@ -56,7 +57,7 @@ def make_forcings_A_B_func(F):
         return lambda r: fpp(r) + (1.0/r)*fp(r) - (n*n)/(r*r)*f(r)
 
     L1s = L_n(1, s, sp, spp)     # Δ(σ̂1) = L1s(r) * cosθ
-    '''
+    
     # A-piece pieces (projected to n=0 and n=2)
     E0 = lambda r: 0.5*(mp(r) + m(r)/r)                # from e1·∇m̂1
     E2 = lambda r: 0.5*(mp(r) - m(r)/r)
@@ -68,10 +69,10 @@ def make_forcings_A_B_func(F):
     # Assemble A forcings (move RHS of (149).2 to RHS): q_A = -E + K̂0(G+H)
     qA0 = lambda r: -E0(r) + K0h*(G0(r) + H0(r))
     qA2 = lambda r: -E2(r) + K0h*(G2(r) + H2(r))
-    '''
+    
     qA0 = lambda r: -(0.5*(mp(r)+m(r)/r) - Khat0/2*(mp(r)*sp(r)+m(r)*spp(r)+m(r)*sp(r)/r))
     qA2 = lambda r: -(0.5*(mp(r)-m(r)/r) - Khat0/2*(mp(r)*sp(r)+m(r)*spp(r)+m(r)*sp(r)/r-2*m(r)*s(r)/r**2))
-    '''
+    
     # B-piece: −(1/2) Δ(m̂1^2). With m̂1^2 = 1/2 m^2 (1 + cos 2θ):
     # projections give qB0 = −¼ L0(m^2), qB2 = −¼ L2(m^2)
     def m2(r):    return m(r)*m(r)
@@ -82,7 +83,7 @@ def make_forcings_A_B_func(F):
 
     qB0 = lambda r: -0.25*L0_m2(r)
     qB2 = lambda r: -0.25*L2_m2(r)
-    '''
+    
     qB0 = lambda r: -(0.5*(mp(r)*mp(r)+m(r)*mpp(r)+1/r*m(r)*mp(r)))
     qB2 = lambda r: -(0.5*(mp(r)*mp(r)+m(r)*mpp(r)+1/r*m(r)*mp(r))-m(r)*m(r)/r**2)
 
@@ -1155,13 +1156,6 @@ def functional_1st_order(first_order_solution, eps = 1e-10, gran = 1000):
         'pde2_residual': pde2_residual
     }
 
-
-def _num_deriv(f: np.ndarray, x: np.ndarray):
-    """1st and 2nd derivatives with respect to nonnegative x via np.gradient (2nd order)."""
-    fp  = np.gradient(f, x, edge_order=2)
-    fpp = np.gradient(fp, x, edge_order=2)
-    return fp, fpp
-
 def check_first_order_pde_discrete_from_F(
     F,
     *,
@@ -1259,10 +1253,8 @@ def _num_deriv(f: np.ndarray, x: np.ndarray):
     fpp = np.gradient(fp, x, edge_order=2)
     return fp, fpp
 
-def _Ln(n: int, f: np.ndarray, r: np.ndarray, fp: Optional[np.ndarray]=None, fpp: Optional[np.ndarray]=None):
+def _Ln(n: int, f: np.ndarray, r: np.ndarray, fp:np.ndarray, fpp: np.ndarray):
     """Modal radial operator L_n f = f'' + (1/r) f' - (n^2/r^2) f, using arrays."""
-    if fp is None or fpp is None:
-        fp, fpp = _num_deriv(f, r)
     return fpp + (1.0/r)*fp - (n**2)/(r**2)*f, fp
 
 def _piece_mode_arrays(piece, mode: int):
@@ -1306,9 +1298,7 @@ def check_second_order_pde_discrete(
         )
 
     R0 = float(F.R0); Z = float(F.Z); P = float(F.P); m0 = float(F.m0)
-    Khat0 = float(getattr(F, "Khat0", None)) if hasattr(F, "Khat0") else None
-    if Khat0 is None:
-        raise ValueError("F must provide Khat0 for the second-order PDE check.")
+    Khat0 = F.Khat0
 
     # Forcings built from first-order fields
     Qf = make_forcings_A_B_func(F)  # provides qA0,qA2,qB0,qB2
@@ -1387,14 +1377,14 @@ def check_second_order_pde_discrete(
         params=dict(R0=R0, Z=Z, P=P, m0=m0, Khat0=Khat0, modes=list(modes))
     )
 
-if __name__ == "__main__":
+#if __name__ == "__main__":
     #P, Z, gamma = 0.1, 0.2, 0.005
     #P,Z,gamma = 0.17, 0.27, 7.3
     #P,Z, gamma = 0.1, 1.25, 0.0886 #-- interesting
-    P,Z,gamma = 0.015915, 0.159155, 0.0025
+    #P,Z,gamma = 0.015915, 0.159155, 0.0025
     #D0, Dp, Dpp = 1.0, 0.0, 0.0
 
-    F = build_first_order(P=P, Z=Z, gamma=gamma)
+   # F = build_first_order(P=P, Z=Z, gamma=gamma)
     #report = check_first_order_compatibility_from_F(F, D0=None, n=1, N=2000)
     #print("loss =", report["loss"])
     #print(report["components"]) 
@@ -1403,15 +1393,15 @@ if __name__ == "__main__":
     #x_arr = np.linspace(-1,1,100)
     #y_arr = [F.s11(s) for s in x_arr]
 
-    result = check_first_order_pde_discrete_from_F(F)
+    #result = check_first_order_pde_discrete_from_F(F)
     #result=functional_1st_order(F)
-    print(result)
+   # print(result)
     #plt.plot(x_arr, y_arr)
     #plt.show()
-    SO = compute_second_order_elimination(F, gamma, D=1.0,   # set D if (2) has it; else leave 1.0
-                                      modes=(0,2),
-                                      eps_factor=1e-3, N_init=200, mesh_power=4.0,
-                                      tol=1e-5, max_nodes=300000)
+   # SO = compute_second_order_elimination(F, gamma, D=1.0,   # set D if (2) has it; else leave 1.0
+      #                                modes=(0,2),
+     #                                 eps_factor=1e-3, N_init=200, mesh_power=4.0,
+      #                                tol=1e-5, max_nodes=300000)
 
     # Access results
     #rho20A, rho22A = SO['rho']['20A'], SO['rho']['22A']
@@ -1420,20 +1410,19 @@ if __name__ == "__main__":
     #plot_full_second_order_fields(SO, F=F, Nr=400, Ntheta=361, rho_scale=1.0, save=False, show=True)
 
    #F  = build_first_order(P, Z, gamma)
-    SO = compute_second_order_elimination(F, gamma)
-    Ai = compute_Ais(F, SO)
+   # SO = compute_second_order_elimination(F, gamma)
+   # Ai = compute_Ais(F, SO)
 
     # F: first-order object (with Khat0), SO: your SecondOrderAll from compute_second_order_elimination
-    report2 = check_second_order_pde_discrete(F, SO, gamma, modes=(0,2))
-    print("second-order total loss =", report2["loss"])
-    for S in ("A","B"):
-        for n in (0,2):
-            if n in report2["details"][S]:
-                d = report2["details"][S][n]
-                print(f"{S}, n={n}: pde_L2={d['pde_L2_total']:.3e}, "
-                    f"bc_center={d['bc_center_s']+d['bc_center_m']:.3e}, "
-                    f"bc_outer={d['bc_outer_s']+d['bc_outer_m']:.3e}, "
-                    f"shape={d['bc_shape']:.3e}")
+    #report2 = check_second_order_pde_discrete(F, SO, gamma, modes=(0,2))
+   # print("second-order total loss =", report2["loss"])
+   # for S in ("A","B"):
+    #    for n in (0,2):
+     #           d = report2["details"][S][n]
+    #            print(f"{S}, n={n}: pde_L2={d['pde_L2_total']:.3e}, "
+   #                f"bc_center={d['bc_center_s']+d['bc_center_m']:.3e}, "
+      #              f"bc_outer={d['bc_outer_s']+d['bc_outer_m']:.3e}, "
+    #                f"shape={d['bc_shape']:.3e}")
 
     #eport = functional(F, SO)
 
@@ -1453,4 +1442,5 @@ if __name__ == "__main__":
     #plt.title(r"$K_2$ vs $e_A$ (Ai fixed)")
    
     #print(res)
-    pass
+    #pass
+'''

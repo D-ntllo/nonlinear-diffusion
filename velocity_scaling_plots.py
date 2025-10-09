@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 velocity_scaling_plots.py
 
@@ -25,28 +24,11 @@ Arguments you might customize:
 """
 
 import argparse
-import importlib.util
-import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Callable
 
-# -------------------- import k2_2d_v2 ---------------------------------
-def import_k2(module_path: str = None):
-    if module_path is None:
-        # try normal import first
-        try:
-            import k2_2d_v2 as k2
-            return k2
-        except Exception as e:
-            print("[warn] Could not import k2_2d_v2 on sys.path; use --module-path to point to k2_2d_v2.py")
-            raise
-    else:
-        spec = importlib.util.spec_from_file_location("k2mod", module_path)
-        k2 = importlib.util.module_from_spec(spec)
-        sys.modules["k2mod"] = k2
-        spec.loader.exec_module(k2)
-        return k2
+
 
 # -------------------- math helpers ------------------------------------
 def D_factory_vdW(e_a: float = 0.0, m_inf: float = 10.0) -> Callable:
