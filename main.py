@@ -19,4 +19,7 @@ if __name__ == "__main__":
 
     # compute arrays and plot
     result = compute_velocity_scaling(F, SO, D_of_m, D0, Nr=180, Nth=128)
+
+    comp = compare_first_second_order_fields(F, SO, V = 0.01)
+    print(comp)
     plot_velocity_scaling(result, save=True, prefix="figs/velocity_scaling", show=False, title_suffix=f"(P={P}, Z={Z}, γ={gamma})")

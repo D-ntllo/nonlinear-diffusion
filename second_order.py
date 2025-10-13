@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Callable, Optional,Any
+from typing import Callable, Optional
 from dataclasses import dataclass
 
 from steady_state import *

@@ -33,6 +33,7 @@ Notes
 """
 
 from typing import Callable, Dict, Optional
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -63,18 +64,19 @@ def build_sigma_m(F, SO, V: float, order: int = 1):
         return sigma, m
 
     # second-order add-ons
-    rA, s0A, m0A, s2A = SO.A.r, SO.A.s0, SO.A.m0, SO.A.s2
-    rB, s0B, m0B, s2B = SO.B.r, SO.B.s0, SO.B.m0, SO.B.s2
+    rA, s0A, m0A, s2A, m2A = SO.A.r, SO.A.s0, SO.A.m0, SO.A.s2, SO.A.m2
+    rB, s0B, m0B, s2B, m2B = SO.B.r, SO.B.s0, SO.B.m0, SO.B.s2, SO.B.m2
 
     def interp(rr, rx, fy): return np.interp(rr, rx, fy)
     s0_tot = lambda rr: interp(rr, rA, s0A) + interp(rr, rB, s0B)
     m0_tot = lambda rr: interp(rr, rA, m0A) + interp(rr, rB, m0B)
     s2_tot = lambda rr: interp(rr, rA, s2A) + interp(rr, rB, s2B)
+    m2_tot = lambda rr: interp(rr, rA, m2A) + interp(rr, rB, m2B)
 
     def sigma(r, th):
         return sigma0_const + V*s1(r)*np.cos(th) + (V**2)*( s0_tot(r) + s2_tot(r)*np.cos(2*th) )
     def m(r, th):
-        return F.m0 + V*m1(r)*np.cos(th) + (V**2)*( m0_tot(r) )
+        return F.m0 + V*m1(r)*np.cos(th) + (V**2)*( m0_tot(r) +m2_tot(r)*np.cos(2*th))
     return sigma, m
 
 # -------------------- Discrete operators & residuals -------------------
@@ -170,6 +172,53 @@ def compute_velocity_scaling(F, SO, D_of_m: Callable, D0: float,
         'm_SO':     np.array(m_SO),
     }
 
+def compare_first_second_order_fields(F, SO, V: float,
+                                      *, Nr: int = 180, Nth: int = 128) -> Dict[str, np.ndarray]:
+    """
+    Evaluate the first- and second-order reconstructions of σ and m on a polar grid
+    and measure their differences.
+
+    Returns a dict containing:
+      - 'r', 'theta': 1D grids.
+      - 'sigma_first', 'sigma_second', 'm_first', 'm_second': field samples (Nr×Nth).
+      - 'sigma_diff_L2', 'm_diff_L2': area-weighted L2 norms of the differences.
+      - 'sigma_diff_max', 'm_diff_max': max-norms of the differences.
+    """
+    r = np.linspace(0.0, F.R0, Nr)
+    th = np.linspace(0.0, 2*np.pi, Nth, endpoint=False)
+    R, TH = np.meshgrid(r, th, indexing='ij')
+
+    sigma_F, m_F = build_sigma_m(F, SO, V, order=1)
+    sigma_SO, m_SO = build_sigma_m(F, SO, V, order=2)
+
+    sigma_first = sigma_F(R, TH)
+    sigma_second = sigma_SO(R, TH)
+    m_first = m_F(R, TH)
+    m_second = m_SO(R, TH)
+
+    dsigma = sigma_second - sigma_first
+    dm = m_second - m_first
+
+    dr = r[1] - r[0] if Nr > 1 else F.R0
+    dth = th[1] - th[0] if Nth > 1 else 2*np.pi
+    area_weight = r[:, None]
+
+    sigma_diff_L2 = float(np.sqrt(np.sum((dsigma**2) * area_weight) * dr * dth))
+    m_diff_L2 = float(np.sqrt(np.sum((dm**2) * area_weight) * dr * dth))
+
+    return dict(
+        r=r,
+        theta=th,
+        sigma_first=sigma_first,
+        sigma_second=sigma_second,
+        m_first=m_first,
+        m_second=m_second,
+        sigma_diff_L2=sigma_diff_L2,
+        m_diff_L2=m_diff_L2,
+        sigma_diff_max=float(np.max(np.abs(dsigma))),
+        m_diff_max=float(np.max(np.abs(dm))),
+    )
+
 def plot_velocity_scaling(result,
                           *, save: bool = False, prefix: str = "velocity_scaling",
                           show: bool = True, title_suffix: str = "") -> None:
@@ -179,6 +228,11 @@ def plot_velocity_scaling(result,
     V = result['V']
     sig_F, sig_SO = result['sigma_F'], result['sigma_SO']
     m_F,   m_SO   = result['m_F'],     result['m_SO']
+
+    if save:
+        out_dir = Path(prefix).parent
+        if out_dir != Path("."):
+            out_dir.mkdir(parents=True, exist_ok=True)
 
     # σ plot
     plt.figure()

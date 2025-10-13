@@ -4,4 +4,4 @@ figs/
 # Python caches
 __pycache__/
 **/__pycache__/
-*.pyc
+*.pyck2_2d.py # or add a pattern
