@@ -18,8 +18,8 @@ Expected SO (SecondOrderAll-like) interface:
 Public API:
     - D_factory_vdW(e_a=0.0, m_inf=10.0) -> callable D(m)
     - build_sigma_m(F, SO, V, order=1|2) -> (sigma(r,theta), m(r,theta))
-    - sigma_residual_L2(F, sigma, m, r, th) -> float
-    - m_residual_L2(F, sigma, m, r, th, D_of_m, K0, V) -> float
+    - sigma_residual_L2(F, sigma, m, r, th, *, scale_theta=None) -> float
+    - m_residual_L2(F, sigma, m, r, th, D_of_m, K0, V, *, scale_theta=None) -> float
     - compute_velocity_scaling(F, SO, D_of_m, D0, Vs=None, Nr=180, Nth=128)
          -> dict with arrays {'V','sigma_F','sigma_SO','m_F','m_SO'}
     - plot_velocity_scaling(result_dict, *, save=False, prefix='velocity_scaling', show=True)
@@ -81,30 +81,66 @@ def build_sigma_m(F, SO, V: float, order: int = 1):
 
 # -------------------- Discrete operators & residuals -------------------
 
-def _laplacian_polar(f: Callable, r: np.ndarray, th: np.ndarray) -> np.ndarray:
+def _shape_scale(F, SO, V: float, th: np.ndarray) -> np.ndarray:
+    """
+    Return the θ-dependent scale factor 1 + ε(θ) that maps the base circular
+    domain r∈[0,R0] to the V^2-perturbed boundary
+        R(θ) = R0 + V^2 (ρ20 + ρ22 cos 2θ).
+    """
+    rho0 = (getattr(SO, "rho20A", 0.0) + getattr(SO, "rho20B", 0.0))
+    rho2 = (getattr(SO, "rho22A", 0.0) + getattr(SO, "rho22B", 0.0))
+    chi = rho0 + rho2 * np.cos(2.0 * th)
+    return 1.0 + (V**2 / F.R0) * chi
+
+
+def _laplacian_polar(f: Callable, r: np.ndarray, th: np.ndarray,
+                     scale_theta: Optional[np.ndarray] = None) -> np.ndarray:
     """Δf on a tensor grid using centered finite differences in polar coords."""
     R, TH = np.meshgrid(r, th, indexing='ij')
     Fv = f(R, TH)
+
+    if scale_theta is None:
+        scale_array = np.ones((1, th.size))
+    else:
+        scale_array = scale_theta[np.newaxis, :]
+    scale = scale_array
+
     Fr  = np.gradient(Fv, r,  axis=0, edge_order=2)
     Frr = np.gradient(Fr,  r,  axis=0, edge_order=2)
     dth = th[1] - th[0]
     Fth   = np.gradient(Fv, dth, axis=1, edge_order=2)
     Fthth = np.gradient(Fth, dth, axis=1, edge_order=2)
-    Rsafe = R.copy(); Rsafe[Rsafe == 0] = r[1]
-    Lap = Frr + (1.0/Rsafe)*Fr + (1.0/(Rsafe**2))*Fthth
+
+    Rphys = R * scale
+    Fr_phys = Fr / scale
+    Frr_phys = Frr / (scale**2)
+
+    Rsafe = Rphys.copy()
+    Rsafe[0, :] = r[1] * scale_array[0, :]
+
+    Lap = Frr_phys + (1.0/Rsafe)*Fr_phys + (1.0/(Rsafe**2))*Fthth
     # center-row regularization (limit r→0)
-    Lap[0, :] = Frr[0, :] + Fthth[0, :]/(r[1]**2)
+    Lap[0, :] = Frr_phys[0, :] + Fthth[0, :]/((r[1]**2)*(scale_array[0, :]**2))
     return Lap
 
-def sigma_residual_L2(F, sigma: Callable, m: Callable, r: np.ndarray, th: np.ndarray) -> float:
+def sigma_residual_L2(F, sigma: Callable, m: Callable, r: np.ndarray, th: np.ndarray,
+                      *, scale_theta: Optional[np.ndarray] = None) -> float:
     """|| ZΔσ - σ + P m ||_{L2(B_R0)} with area weight r dr dθ."""
-    Lap = _laplacian_polar(sigma, r, th)
-    R = F.Z * Lap - sigma(*np.meshgrid(r, th, indexing='ij')) + F.P * m(*np.meshgrid(r, th, indexing='ij'))
+    Lap = _laplacian_polar(sigma, r, th, scale_theta=scale_theta)
+    sigma_vals = sigma(*np.meshgrid(r, th, indexing='ij'))
+    m_vals = m(*np.meshgrid(r, th, indexing='ij'))
+    Resid = F.Z * Lap - sigma_vals + F.P * m_vals
     dth = th[1]-th[0]; dr = r[1]-r[0]
-    return float(np.sqrt(np.sum((R**2)*r[:,None]) * dr * dth))
+    if scale_theta is None:
+        scale_arr = np.ones((1, th.size))
+    else:
+        scale_arr = scale_theta[np.newaxis, :]
+    weight = (r[:, None]) * (scale_arr**2)
+    return float(np.sqrt(np.sum((Resid**2)*weight) * dr * dth))
 
 def m_residual_L2(F, sigma: Callable, m: Callable, r: np.ndarray, th: np.ndarray,
-                  D_of_m: Callable, K0: float, V: float) -> float:
+                  D_of_m: Callable, K0: float, V: float,
+                  *, scale_theta: Optional[np.ndarray] = None) -> float:
     """
     || -V·∇m - ∇·( D(m)∇m - K0 m ∇σ ) ||_{L2(B_R0)} with area weight.
     V is along +x: V·∇ = V(cosθ ∂r - sinθ (1/r) ∂θ).
@@ -119,9 +155,20 @@ def m_residual_L2(F, sigma: Callable, m: Callable, r: np.ndarray, th: np.ndarray
     Sr  = np.gradient(Sg, r,  axis=0, edge_order=2)
     Sth = np.gradient(Sg, dth, axis=1, edge_order=2)
 
-    Rsafe = R.copy(); Rsafe[Rsafe == 0] = r[1]
-    grad_m_r,  grad_m_th  = Mr,        Mth/Rsafe
-    grad_s_r,  grad_s_th  = Sr,        Sth/Rsafe
+    if scale_theta is None:
+        scale_arr = np.ones((1, th.size))
+    else:
+        scale_arr = scale_theta[np.newaxis, :]
+    scale = scale_arr
+
+    Rphys = R * scale
+    Rsafe = Rphys.copy()
+    Rsafe[0, :] = r[1] * scale_arr[0, :]
+
+    grad_m_r = Mr / scale
+    grad_s_r = Sr / scale
+    grad_m_th  = Mth / Rsafe
+    grad_s_th  = Sth / Rsafe
 
     VdotGradm = V*(np.cos(TH)*grad_m_r - np.sin(TH)*grad_m_th)
 
@@ -129,14 +176,15 @@ def m_residual_L2(F, sigma: Callable, m: Callable, r: np.ndarray, th: np.ndarray
     flux_r  = Dm*grad_m_r  - K0*M*grad_s_r
     flux_th = Dm*grad_m_th - K0*M*grad_s_th
 
-    d_r_fr   = np.gradient(Rsafe*flux_r, r, axis=0, edge_order=2)
+    d_r_fr   = np.gradient(Rphys*flux_r, r, axis=0, edge_order=2)
     d_th_fth = np.gradient(flux_th, dth, axis=1, edge_order=2)
-    div_flux = (1.0/Rsafe)*d_r_fr + (1.0/Rsafe)*d_th_fth
+    div_flux = (1.0/(Rsafe*scale))*d_r_fr + (1.0/Rsafe)*d_th_fth
 
     Resid = -VdotGradm - div_flux
 
     dth = th[1]-th[0]; dr = r[1]-r[0]
-    return float(np.sqrt(np.sum((Resid**2)*r[:,None]) * dr * dth))
+    weight = (r[:, None]) * (scale_arr**2)
+    return float(np.sqrt(np.sum((Resid**2)*weight) * dr * dth))
 
 # -------------------- Orchestrators -----------------------------------
 
@@ -160,9 +208,10 @@ def compute_velocity_scaling(F, SO, D_of_m: Callable, D0: float,
         s1, m1 = build_sigma_m(F, SO, V, order=1)
         s2, m2 = build_sigma_m(F, SO, V, order=2)
         sig_F .append(sigma_residual_L2(F, s1, m1, r, th))
-        sig_SO.append(sigma_residual_L2(F, s2, m2, r, th))
+        scale_theta = _shape_scale(F, SO, V, th)
+        sig_SO.append(sigma_residual_L2(F, s2, m2, r, th, scale_theta=scale_theta))
         m_F   .append(m_residual_L2(F, s1, m1, r, th, D_of_m, K0, V))
-        m_SO  .append(m_residual_L2(F, s2, m2, r, th, D_of_m, K0, V))
+        m_SO  .append(m_residual_L2(F, s2, m2, r, th, D_of_m, K0, V, scale_theta=scale_theta))
 
     return {
         'V': Vs,

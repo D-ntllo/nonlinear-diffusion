@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from steady_state import *
 from first_order import *
 
-from scipy.special import iv as I, kv as K, ivp as Ip, kvp as Kp
+from scipy.special import iv as I, kv as K, ivp as Ip, kvp as Kp, jv as J, yv as Y, jvp as Jp, yvp as Yp
 
 
 @dataclass
@@ -69,6 +69,8 @@ def _build_mesh(R0: float, eps_factor: float, N_init: int, mesh_power: float) ->
     s = np.linspace(0.0, 1.0, int(N_init)+1)
     return eps + (R0 - eps) * (s**mesh_power)
 
+
+
 # ---- L_n^{-1} q via Green's integral (regular at 0, Neumann at R0) ----
 def _Ln_inverse_neumann(n: int, q: Callable[[np.ndarray], np.ndarray], r: np.ndarray, R0: float) -> np.ndarray:
     rr = r
@@ -79,7 +81,9 @@ def _Ln_inverse_neumann(n: int, q: Callable[[np.ndarray], np.ndarray], r: np.nda
         I1 = _cumtrapz_from_zero((rr**(1-n))*qv, rr)
         I2 = _cumtrapz_from_zero((rr**(n+1))*qv, rr)
         # A from u'(R0)=0
-        A = -0.5*( I1[-1] + (R0**(-2*n))*I2[-1] )/n
+        #A = -0.5*( I1[-1] + (R0**(-2*n))*I2[-1] )/n
+        #A = - 2*float(q(np.array(R0)))/ (n**2 * R0**(n-2)) + 1/(2*n)*I1[-1] -1/(2*n)*R0**(-2*n) * I2[-1] 
+        A = -1/(2*n)*I1[-1] -R0**(-2*n)/(2*n)*I2[-1]
         u = A*(rr**n) + (rr**n)*I1/(2*n) - (rr**(-n))*I2/(2*n)
         return u
     else:
@@ -99,36 +103,34 @@ def _Ln_inverse_neumann(n: int, q: Callable[[np.ndarray], np.ndarray], r: np.nda
         return u
 
 # ---- Solve σ from (L_n + κ^2)σ = f with σ'(R0)=0 using modified-Bessel integral repr. ----
-def _solve_sigma_bessel(n: int, kappa: float, f: np.ndarray, r: np.ndarray, R0: float) -> Tuple[np.ndarray, float]:
+def _solve_sigma_bessel(n: int, kappa: float,f: Callable[[np.ndarray], np.ndarray], r: np.ndarray, R0: float) -> Tuple[np.ndarray, float]:
     rr = r
     kr = kappa*rr
+    fv = f(rr)
 
-    # A(r) = ∫_0^r s K_n(κ s) f(s) ds,  B(r) = ∫_0^r s I_n(κ s) f(s) ds
-    A_of_r = _cumtrapz_from_zero(rr * K(n, kappa*rr) * f, rr)
-    B_of_r = _cumtrapz_from_zero(rr * I(n, kappa*rr) * f, rr)
+    # I1(r) = ∫_0^r s Y_n(κ s) f(s) ds,  I2(r) = ∫_0^r s J_n(κ s) f(s) ds
+    I1 = _cumtrapz_from_zero(rr * Y(n, kappa*rr) * fv, rr)
+    I2 = _cumtrapz_from_zero(rr * J(n, kappa*rr) * fv, rr)
 
-    # α from σ'(R0)=0:
+    # A from σ'(R0)=0:
     kr0 = kappa*R0
-    alpha = (Kp(n, kr0)/Ip(n, kr0)) * B_of_r[-1] - A_of_r[-1]
+    A= np.pi/2*(-(Yp(n, kr0)/Jp(n, kr0)) * I2[-1] + I1[-1])
 
-    # σ(r) = I_n(κ r)[α + A(r)] - K_n(κ r) B(r)
-    sigma = I(n, kr)*(alpha + A_of_r) - K(n, kr)*B_of_r
+    # σ(r) = J_n(κ r)[A - (π/2) * I1(r)] + (π/2) * Y_n(κ r) * I2(r)
+    sigma = J(n, kr)*(A - (np.pi/2)*I1) + (np.pi/2)*Y(n, kr)*I2
 
     # also return σ(R0)
-    sR0 = float(I(n, kr0)*(alpha + A_of_r[-1]) - K(n, kr0)*B_of_r[-1])
+    sR0 = float(J(n, kr0)*(A - (np.pi/2)*I1[-1]) + (np.pi/2)*Y(n, kr0)*I2[-1])
     return sigma, sR0
 
 # ---- Main: compute second order via integrals (no BVPs) ----
 def compute_second_order(
     F,
-    D: Optional[float] = None,      # (unused; equations written with Khat0)
     *,
     modes=(0, 2),
     eps_factor: float = 1e-3,
     N_init: int = 400,
     mesh_power: float = 3.0,
-    tol: float = 1e-5,              # kept for API parity; unused
-    max_nodes: int = 300000         # kept for API parity; unused
 ) -> SecondOrderAll:
 
     R0 = float(F.R0); Z = float(F.Z); P = float(F.P); m0 = float(F.m0); Khat0 = float(F.Khat0); gamma = float(F.gamma)
