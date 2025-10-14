@@ -69,8 +69,6 @@ def _build_mesh(R0: float, eps_factor: float, N_init: int, mesh_power: float) ->
     s = np.linspace(0.0, 1.0, int(N_init)+1)
     return eps + (R0 - eps) * (s**mesh_power)
 
-
-
 # ---- L_n^{-1} q via Green's integral (regular at 0, Neumann at R0) ----
 def _Ln_inverse_neumann(n: int, q: Callable[[np.ndarray], np.ndarray], r: np.ndarray, R0: float) -> np.ndarray:
     rr = r
@@ -103,10 +101,10 @@ def _Ln_inverse_neumann(n: int, q: Callable[[np.ndarray], np.ndarray], r: np.nda
         return u
 
 # ---- Solve σ from (L_n + κ^2)σ = f with σ'(R0)=0 using modified-Bessel integral repr. ----
-def _solve_sigma_bessel(n: int, kappa: float,f: Callable[[np.ndarray], np.ndarray], r: np.ndarray, R0: float) -> Tuple[np.ndarray, float]:
+def _solve_sigma_bessel(n: int, kappa: float, f: np.ndarray, r: np.ndarray, R0: float) -> Tuple[np.ndarray, float]:
     rr = r
     kr = kappa*rr
-    fv = f(rr)
+    fv = f
 
     # I1(r) = ∫_0^r s Y_n(κ s) f(s) ds,  I2(r) = ∫_0^r s J_n(κ s) f(s) ds
     I1 = _cumtrapz_from_zero(rr * Y(n, kappa*rr) * fv, rr)
@@ -155,7 +153,7 @@ def compute_second_order(
                 out[n] = (np.zeros_like(r), np.zeros_like(r)); sR0s[n] = 0.0
                 continue
             u = _Ln_inverse_neumann(n, qfn, r, R0)
-            f_sigma = -(P/Z)*u
+            f_sigma = (P/Z)*u
             sigma, sR0 = _solve_sigma_bessel(n, kappa, f_sigma, r, R0)
             m = u + Khat0*m0*sigma
             out[n] = (sigma, m); sR0s[n] = sR0
@@ -165,6 +163,26 @@ def compute_second_order(
     s0A, s2A, m0A, m2A, sR0_0A, sR0_2A = solve_piece(Qf["qA0"], Qf["qA2"])
     # B piece
     s0B, s2B, m0B, m2B, sR0_0B, sR0_2B = solve_piece(Qf["qB0"], Qf["qB2"])
+
+
+    ## At this point n=0 solutions need to be adjusted  to respect the integral condition for m and rho.
+
+    def _update_solns_by_A(sigma_sol: np.ndarray, m_sol: np.ndarray, sR0_sol: float) -> Tuple[np.ndarray, np.ndarray, float]:
+        
+        Intm = _cumtrapz_from_zero(m_sol, r)[-1]
+
+        Anum = (P*Khat0*m0-1)*(m0*R0*sR0_sol+ gamma* Intm - 2*np.pi*R0**2*Intm)
+    
+        Aden = (-m0*P-R0+Khat0*m0*P*R0)*(-gamma + 2*np.pi*R0**2)
+
+        A = Anum/Aden
+
+        sA = -P*A/ (P*Khat0*m0-1)
+
+        return sigma_sol+sA, m_sol+A, sR0_sol+sA
+    
+    s0A, m0A, sR0_0A = _update_solns_by_A(s0A, m0A, sR0_0A)
+    s0B, m0B, sR0_0B = _update_solns_by_A(s0B, m0B, sR0_0B)
 
     # Map σ(R0) -> ρ via (149).4
     rho20A = - sR0_0A / (2.0*np.pi + gamma/R0**2) if 0 in modes else 0.0
