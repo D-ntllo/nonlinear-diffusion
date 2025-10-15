@@ -32,34 +32,41 @@ Notes
 * V is oriented along +x so V·∇ = V (cosθ ∂r - sinθ (1/r) ∂θ).
 """
 
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, Tuple
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 
 # -------------------- Diffusion helpers --------------------
 
-def D_factory_vdW(e_a: float = 0.0, m_inf: float = 10.0) -> Callable:
-    """Return a callable D(m) = m_inf^2/(m_inf - m)^2 - e_a*m."""
+def D_vdW(e_a: float = 0.0, m_inf: float = 10.0) -> Tuple[Callable, Callable, Callable]:
+    """Return a callable D(m) = m_inf^2/(m_inf - m)^2 - e_a*m and its derivatives"""
     def D(m):
         return (m_inf**2)/((m_inf - m)**2) - e_a*m
-    return D
+    
+    def Dp(m):
+        return (2*m_inf**2)/((m_inf-m)**3) - e_a
+    
+    def Dpp(m):
+        return (6*m_inf**2)/((m_inf-m)**4)
+    return D, Dp, Dpp
 
 # -------------------- Field assembly up to order in V ------------------
 
-def build_sigma_m(F, SO, V: float, order: int = 1):
+def build_sigma_m(F, SO, D, Dp, V: float, order: int = 1):
     """
     Construct σ(r,θ), m(r,θ) up to given order in V using F and SO.
     order=1: σ = σ0 + V σ1 cosθ;   m = m0 + V m1 cosθ
     order=2: add V^2 (n=0,2) from SO.A+SO.B
     Returns two vectorized callables (r,θ)->array.
     """
-    sigma0_const = F.P * F.m0  # makes ZΔσ0 - σ0 + P m0 = 0
+    m0 = F.m0
+    sigma0 = F.P * m0  # makes ZΔσ0 - σ0 + P m0 = 0
     s1 = lambda r: F.s11(r)
     m1 = lambda r: F.m11(r)
 
     if order == 1:
-        def sigma(r, th): return sigma0_const + V*s1(r)*np.cos(th)
+        def sigma(r, th): return sigma0 + V*s1(r)*np.cos(th)
         def m(r, th):     return F.m0 + V*m1(r)*np.cos(th)
         return sigma, m
 
@@ -67,14 +74,14 @@ def build_sigma_m(F, SO, V: float, order: int = 1):
     rA, s0A, m0A, s2A, m2A = SO.A.r, SO.A.s0, SO.A.m0, SO.A.s2, SO.A.m2
     rB, s0B, m0B, s2B, m2B = SO.B.r, SO.B.s0, SO.B.m0, SO.B.s2, SO.B.m2
 
-    def interp(rr, rx, fy): return np.interp(rr, rx, fy)
-    s0_tot = lambda rr: interp(rr, rA, s0A) + interp(rr, rB, s0B)
-    m0_tot = lambda rr: interp(rr, rA, m0A) + interp(rr, rB, m0B)
-    s2_tot = lambda rr: interp(rr, rA, s2A) + interp(rr, rB, s2B)
-    m2_tot = lambda rr: interp(rr, rA, m2A) + interp(rr, rB, m2B)
+    
+    s0_tot = lambda rr: 1/D(m0)**2*np.interp(rr, rA, s0A) + Dp(m0)/D(m0)**3 * np.interp(rr, rB, s0B)
+    m0_tot = lambda rr: 1/D(m0)**2*np.interp(rr, rA, m0A) + Dp(m0)/D(m0)**3 * np.interp(rr, rB, m0B)
+    s2_tot = lambda rr: 1/D(m0)**2*np.interp(rr, rA, s2A) + Dp(m0)/D(m0)**3 * np.interp(rr, rB, s2B)
+    m2_tot = lambda rr: 1/D(m0)**2*np.interp(rr, rA, m2A) + Dp(m0)/D(m0)**3 * np.interp(rr, rB, m2B)
 
     def sigma(r, th):
-        return sigma0_const + V*s1(r)*np.cos(th) + (V**2)*( s0_tot(r) + s2_tot(r)*np.cos(2*th) )
+        return sigma0 + V*s1(r)*np.cos(th) + (V**2)*( s0_tot(r) + s2_tot(r)*np.cos(2*th) )
     def m(r, th):
         return F.m0 + V*m1(r)*np.cos(th) + (V**2)*( m0_tot(r) +m2_tot(r)*np.cos(2*th))
     return sigma, m
@@ -188,7 +195,7 @@ def m_residual_L2(F, sigma: Callable, m: Callable, r: np.ndarray, th: np.ndarray
 
 # -------------------- Orchestrators -----------------------------------
 
-def compute_velocity_scaling(F, SO, D_of_m: Callable, D0: float,
+def compute_velocity_scaling(F, SO, D: Callable, Dp: Callable,
                              Vs: Optional[np.ndarray] = None,
                              Nr: int = 180, Nth: int = 128):
     """
@@ -201,17 +208,17 @@ def compute_velocity_scaling(F, SO, D_of_m: Callable, D0: float,
 
     r  = np.linspace(0.0, F.R0, Nr)
     th = np.linspace(0.0, 2*np.pi, Nth, endpoint=False)
-    K0 = F.Khat0 * D0
+    K0 = F.Khat0 * D(F.m0)
 
     sig_F = []; sig_SO = []; m_F = []; m_SO = []
     for V in Vs:
-        s1, m1 = build_sigma_m(F, SO, V, order=1)
-        s2, m2 = build_sigma_m(F, SO, V, order=2)
+        s1, m1 = build_sigma_m(F, SO, D, Dp, V, order=1)
+        s2, m2 = build_sigma_m(F, SO, D, Dp, V, order=2)
         sig_F .append(sigma_residual_L2(F, s1, m1, r, th))
         scale_theta = _shape_scale(F, SO, V, th)
         sig_SO.append(sigma_residual_L2(F, s2, m2, r, th, scale_theta=scale_theta))
-        m_F   .append(m_residual_L2(F, s1, m1, r, th, D_of_m, K0, V))
-        m_SO  .append(m_residual_L2(F, s2, m2, r, th, D_of_m, K0, V, scale_theta=scale_theta))
+        m_F   .append(m_residual_L2(F, s1, m1, r, th, D, K0, V))
+        m_SO  .append(m_residual_L2(F, s2, m2, r, th, D, K0, V, scale_theta=scale_theta))
 
     return {
         'V': Vs,
@@ -221,7 +228,7 @@ def compute_velocity_scaling(F, SO, D_of_m: Callable, D0: float,
         'm_SO':     np.array(m_SO),
     }
 
-def compare_first_second_order_fields(F, SO, V: float,
+def compare_first_second_order_fields(F, SO, D, Dp, V: float,
                                       *, Nr: int = 180, Nth: int = 128) -> Dict[str, np.ndarray]:
     """
     Evaluate the first- and second-order reconstructions of σ and m on a polar grid
@@ -237,8 +244,8 @@ def compare_first_second_order_fields(F, SO, V: float,
     th = np.linspace(0.0, 2*np.pi, Nth, endpoint=False)
     R, TH = np.meshgrid(r, th, indexing='ij')
 
-    sigma_F, m_F = build_sigma_m(F, SO, V, order=1)
-    sigma_SO, m_SO = build_sigma_m(F, SO, V, order=2)
+    sigma_F, m_F = build_sigma_m(F, SO, D, Dp, V, order=1)
+    sigma_SO, m_SO = build_sigma_m(F, SO, D, Dp, V, order=2)
 
     sigma_first = sigma_F(R, TH)
     sigma_second = sigma_SO(R, TH)

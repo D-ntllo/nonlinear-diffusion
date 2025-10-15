@@ -14,12 +14,12 @@ if __name__ == "__main__":
 
 
     # diffusion model and K
-    D_of_m = D_factory_vdW(e_a=0.0, m_inf=10.0)  # or your own D(m)
-    D0 = D_of_m(F.m0)                            # D(m0)
+    D, Dp, Dpp = D_vdW(e_a=0.0, m_inf=10.0)  # or your own D(m)
+    #D0 = D_of_m(F.m0)                            # D(m0)
 
     # compute arrays and plot
-    result = compute_velocity_scaling(F, SO, D_of_m, D0, Nr=180, Nth=128)
+    result = compute_velocity_scaling(F, SO, D, Dp, Nr=180, Nth=128)
 
-    comp = compare_first_second_order_fields(F, SO, V = 0.01)
+    comp = compare_first_second_order_fields(F, SO, D, Dp, V = 0.01)
     print(comp)
     plot_velocity_scaling(result, save=True, prefix="figs/velocity_scaling", show=False, title_suffix=f"(P={P}, Z={Z}, γ={gamma})")
