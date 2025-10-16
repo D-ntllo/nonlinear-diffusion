@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 from dataclasses import dataclass
 
 from steady_state import *
@@ -64,6 +64,22 @@ def _cumtrapz_from_zero(y: np.ndarray, x: np.ndarray) -> np.ndarray:
     cs = np.cumsum(0.5*(y[1:]+y[:-1])*np.diff(x))
     return np.concatenate(([0.0], cs))
 
+# add a helper (suffix integral) next to _cumtrapz_from_zero
+def _cumtrapz_to_R0(y: np.ndarray, x: np.ndarray) -> np.ndarray:
+    """
+    Cumulative trapezoid ∫_x^R0 y(s) ds on the given grid, returned as an array B with:
+        B[i] = ∫_{x[i]}^{x[-1]} y(s) ds,  B[-1] = 0.
+    """
+    n = len(x)
+    if n == 1:
+        return np.zeros_like(x, dtype=float)
+    dx = np.diff(x)
+    areas = 0.5 * (y[:-1] + y[1:]) * dx
+    B = np.zeros(n, dtype=float)
+    B[:-1] = np.cumsum(areas[::-1])[::-1]
+    B[-1] = 0.0
+    return B
+
 def _build_mesh(R0: float, eps_factor: float, N_init: int, mesh_power: float) -> np.ndarray:
     eps = max(1e-12, eps_factor*R0)
     s = np.linspace(0.0, 1.0, int(N_init)+1)
@@ -84,7 +100,7 @@ def _Ln_inverse_neumann(n: int, q: Callable[[np.ndarray], np.ndarray], r: np.nda
         A = -1/(2*n)*I1[-1] -R0**(-2*n)/(2*n)*I2[-1]
         u = A*(rr**n) + (rr**n)*I1/(2*n) - (rr**(-n))*I2/(2*n)
         return u
-    else:
+    else:                   
         # n = 0: u(r) = A - ∫_0^r s ln s q(s) ds + (ln r) ∫_0^r s q(s) ds
         F1 = _cumtrapz_from_zero(rr*qv, rr)
         # handle ln at first point safely
@@ -102,23 +118,46 @@ def _Ln_inverse_neumann(n: int, q: Callable[[np.ndarray], np.ndarray], r: np.nda
 
 # ---- Solve σ from (L_n + κ^2)σ = f with σ'(R0)=0 using modified-Bessel integral repr. ----
 def _solve_sigma_bessel(n: int, kappa: float, f: np.ndarray, r: np.ndarray, R0: float) -> Tuple[np.ndarray, float]:
-    rr = r
-    kr = kappa*rr
-    fv = f
+    """
+    Solve (L_n + kappa^2) σ = f on (0,R0) with σ'(R0)=0, regular at r=0.
 
-    # I1(r) = ∫_0^r s Y_n(κ s) f(s) ds,  I2(r) = ∫_0^r s J_n(κ s) f(s) ds
-    I1 = _cumtrapz_from_zero(rr * Y(n, kappa*rr) * fv, rr)
-    I2 = _cumtrapz_from_zero(rr * J(n, kappa*rr) * fv, rr)
+    Green's representation for '+' sign (ordinary Bessels):
+        σ(r) = (π/2) [ ψ̂(r) ∫_0^r s J_n(κ s) f(s) ds + J_n(κ r) ∫_r^{R0} s ψ̂(κ s) f(s) ds ],
+    where ψ̂(r) = Y_n(κ r) + c J_n(κ r) and c = -Y_n'(κ R0)/J_n'(κ R0).
+    This avoids integrating Y_n near 0 and enforces σ'(R0)=0 by construction.
+    """
+    rr = np.asarray(r, dtype=float)
+    fv = np.asarray(f, dtype=float)
+    assert rr.ndim == 1 and fv.shape == rr.shape, "r and f must be 1D arrays of same length."
+    assert np.all(np.diff(rr) > 0), "r must be strictly increasing."
+    assert np.isclose(rr[-1], R0), "R0 must equal r[-1] for this routine."
 
-    # A from σ'(R0)=0:
-    kr0 = kappa*R0
-    A= np.pi/2*(-(Yp(n, kr0)/Jp(n, kr0)) * I2[-1] + I1[-1])
+    kr  = kappa * rr
+    kr0 = kappa * R0
 
-    # σ(r) = J_n(κ r)[A - (π/2) * I1(r)] + (π/2) * Y_n(κ r) * I2(r)
-    sigma = J(n, kr)*(A - (np.pi/2)*I1) + (np.pi/2)*Y(n, kr)*I2
+    # fundamental solutions and derivatives (w.r.t. argument)
+    Jn  = lambda x: J(n, x)
+    Yn  = lambda x: Y(n, x)
+    Jnp = lambda x: Jp(n, x)   # d/dx J_n(x)
+    Ynp = lambda x: Yp(n, x)   # d/dx Y_n(x)
 
-    # also return σ(R0)
-    sR0 = float(J(n, kr0)*(A - (np.pi/2)*I1[-1]) + (np.pi/2)*Y(n, kr0)*I2[-1])
+    denom = Jnp(kr0)
+    if np.isclose(denom, 0.0):
+        raise ZeroDivisionError("Neumann resonance: J_n'(kappa*R0) ≈ 0; adjust kappa or R0.")
+    c = -Ynp(kr0) / denom
+
+    phi = Jn(kr)                  # left-regular
+    psi = Yn(kr) + c * Jn(kr)     # right-Neumann
+
+    # prefix and suffix weighted integrals
+    I2 = _cumtrapz_from_zero(rr * phi * fv, rr)   # ∫_0^r s J_n(κ s) f(s) ds
+    B  = _cumtrapz_to_R0(rr * psi * fv, rr)       # ∫_r^{R0} s ψ̂(κ s) f(s) ds
+
+    sigma = (np.pi/2.0) * (psi * I2 + phi * B)
+
+    # σ(R0): since B(R0)=0, I2(R0)=∫_0^{R0} s J_n(κ s) f(s) ds
+    sR0 = float((np.pi/2.0) * (Yn(kr0) + c * Jn(kr0)) * I2[-1])
+
     return sigma, sR0
 
 # ---- Main: compute second order via integrals (no BVPs) ----
@@ -153,7 +192,7 @@ def compute_second_order(
                 out[n] = (np.zeros_like(r), np.zeros_like(r)); sR0s[n] = 0.0
                 continue
             u = _Ln_inverse_neumann(n, qfn, r, R0)
-            f_sigma = (P/Z)*u
+            f_sigma = -(P/Z)*u
             sigma, sR0 = _solve_sigma_bessel(n, kappa, f_sigma, r, R0)
             m = u + Khat0*m0*sigma
             out[n] = (sigma, m); sR0s[n] = sR0
@@ -168,15 +207,12 @@ def compute_second_order(
     ## At this point n=0 solutions need to be adjusted  to respect the integral condition for m and rho.
 
     def _update_solns_by_A(sigma_sol: np.ndarray, m_sol: np.ndarray, sR0_sol: float) -> Tuple[np.ndarray, np.ndarray, float]:
-        
         Intm = _cumtrapz_from_zero(m_sol, r)[-1]
 
-        Anum = (P*Khat0*m0-1)*(m0*R0*sR0_sol+ gamma* Intm - 2*np.pi*R0**2*Intm)
-    
+        Anum = (P*Khat0*m0-1)*(m0*R0**2*sR0_sol+ gamma* Intm - 2*np.pi*R0**2*Intm)
         Aden = (-m0*P-R0+Khat0*m0*P*R0)*(-gamma + 2*np.pi*R0**2)
 
         A = Anum/Aden
-
         sA = -P*A/ (P*Khat0*m0-1)
 
         return sigma_sol+sA, m_sol+A, sR0_sol+sA

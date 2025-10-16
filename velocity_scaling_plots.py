@@ -203,7 +203,7 @@ def compute_velocity_scaling(F, SO, D: Callable, Dp: Callable,
     Returns dict with arrays: {'V','sigma_F','sigma_SO','m_F','m_SO'}.
     """
     if Vs is None:
-        Vs = np.geomspace(1e-4, 1e-1, 12)
+        Vs = np.geomspace(1e-7, 1e-1, 20)
     Vs = np.asarray(Vs, dtype=float)
 
     r  = np.linspace(0.0, F.R0, Nr)
@@ -289,8 +289,36 @@ def plot_velocity_scaling(result,
         out_dir = Path(prefix).parent
         if out_dir != Path("."):
             out_dir.mkdir(parents=True, exist_ok=True)
+    # if style == "log":
+    #     # σ plot
+    #     plt.figure()
+    #     plt.loglog(V, sig_F, 'o-', label='σ: First-order (F)')
+    #     plt.loglog(V, sig_SO, 's-', label='σ: Second-order (F+SO)')
+    #     plt.xlabel("V"); plt.ylabel(r"$\| Z\Delta\sigma - \sigma + P m \|_{L^2}$")
+    #     plt.title("Residual scaling vs V (σ-equation) " + title_suffix)
+    #     plt.legend()
+    #     if save:
+    #         plt.savefig(f"{prefix}_sigma.png", dpi=180, bbox_inches='tight')
+    #     if show:
+    #         plt.show()
+    #     else:
+    #         plt.close()
 
-    # σ plot
+    #     # m plot
+    #     plt.figure()
+    #     plt.loglog(V, m_F, 'o-', label='m: First-order (F)')
+    #     plt.loglog(V, m_SO, 's-', label='m: Second-order (F+SO)')
+    #     plt.xlabel("V"); plt.ylabel(r"$\| -V\cdot\nabla m - \nabla\cdot(D(m)\nabla m - K m \nabla\sigma) \|_{L^2}$")
+    #     plt.title("Residual scaling vs V (m-equation) " + title_suffix)
+    #     plt.legend()
+    #     if save:
+    #         plt.savefig(f"{prefix}_m.png", dpi=180, bbox_inches='tight')
+    #     if show:
+    #         plt.show()
+    #     else:
+    #         plt.close()
+    # else:
+         # σ plot
     plt.figure()
     plt.loglog(V, sig_F, 'o-', label='σ: First-order (F)')
     plt.loglog(V, sig_SO, 's-', label='σ: Second-order (F+SO)')
