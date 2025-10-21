@@ -88,14 +88,16 @@ def build_sigma_m(F, SO, D, Dp, V: float, order: int = 1):
 
 # -------------------- Discrete operators & residuals -------------------
 
-def _shape_scale(F, SO, V: float, th: np.ndarray) -> np.ndarray:
+def _shape_scale(F, SO,D, Dp, V: float, th: np.ndarray) -> np.ndarray:
     """
     Return the θ-dependent scale factor 1 + ε(θ) that maps the base circular
     domain r∈[0,R0] to the V^2-perturbed boundary
         R(θ) = R0 + V^2 (ρ20 + ρ22 cos 2θ).
     """
-    rho0 = (getattr(SO, "rho20A", 0.0) + getattr(SO, "rho20B", 0.0))
-    rho2 = (getattr(SO, "rho22A", 0.0) + getattr(SO, "rho22B", 0.0))
+    m0 =F.m0
+
+    rho0 = (1/D(m0)**2*getattr(SO, "rho20A", 0.0) + Dp(m0)/D(m0)**3 * getattr(SO, "rho20B", 0.0))
+    rho2 = (1/D(m0)**2*getattr(SO, "rho22A", 0.0) + Dp(m0)/D(m0)**3 * getattr(SO, "rho22B", 0.0))
     chi = rho0 + rho2 * np.cos(2.0 * th)
     return 1.0 + (V**2 / F.R0) * chi
 
@@ -215,7 +217,7 @@ def compute_velocity_scaling(F, SO, D: Callable, Dp: Callable,
         s1, m1 = build_sigma_m(F, SO, D, Dp, V, order=1)
         s2, m2 = build_sigma_m(F, SO, D, Dp, V, order=2)
         sig_F .append(sigma_residual_L2(F, s1, m1, r, th))
-        scale_theta = _shape_scale(F, SO, V, th)
+        scale_theta = _shape_scale(F, SO, D, Dp, V, th)
         sig_SO.append(sigma_residual_L2(F, s2, m2, r, th, scale_theta=scale_theta))
         m_F   .append(m_residual_L2(F, s1, m1, r, th, D, K0, V))
         m_SO  .append(m_residual_L2(F, s2, m2, r, th, D, K0, V, scale_theta=scale_theta))

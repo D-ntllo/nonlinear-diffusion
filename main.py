@@ -51,7 +51,7 @@ if __name__ == "__main__":
         second_order_N=300,
         verbose=True
     )
-
+    
     # Extract all parameter triples with a +→− crossing
     hits = [r for r in res if r.get('ok') and r.get('changed_to_negative')]
     print(f"\nFound {len(hits)} triples with change-to-negative:")

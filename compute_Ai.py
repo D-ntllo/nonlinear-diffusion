@@ -153,6 +153,8 @@ def compute_Ais(F: FirstOrder, SO: SecondOrderAll) -> Dict[str, float]:
     A2 = A2t / A0
     A3 = A3t / A0
     A4 = A4t / A0
+
+    print("A1",A1, "A2", A2, "A3", A3, "A4",A4)
     return dict(A0=A0, A1=A1, A2=A2, A3=A3, A4=A4,
                 meta=dict(R0=F.R0, m0=F.m0, Khat0=F.Khat0, alpha=F.alpha))
 
