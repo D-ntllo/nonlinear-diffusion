@@ -37,6 +37,8 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 
+
+from second_order import *
 # -------------------- Diffusion helpers --------------------
 
 def D_vdW(e_a: float = 0.0, m_inf: float = 10.0) -> Tuple[Callable, Callable, Callable]:
@@ -50,41 +52,6 @@ def D_vdW(e_a: float = 0.0, m_inf: float = 10.0) -> Tuple[Callable, Callable, Ca
     def Dpp(m):
         return (6*m_inf**2)/((m_inf-m)**4)
     return D, Dp, Dpp
-
-# -------------------- Field assembly up to order in V ------------------
-
-def build_sigma_m(F, SO, D, Dp, V: float, order: int = 1):
-    """
-    Construct σ(r,θ), m(r,θ) up to given order in V using F and SO.
-    order=1: σ = σ0 + V σ1 cosθ;   m = m0 + V m1 cosθ
-    order=2: add V^2 (n=0,2) from SO.A+SO.B
-    Returns two vectorized callables (r,θ)->array.
-    """
-    m0 = F.m0
-    sigma0 = F.P * m0  # makes ZΔσ0 - σ0 + P m0 = 0
-    s1 = lambda r: F.s11(r)
-    m1 = lambda r: F.m11(r)
-
-    if order == 1:
-        def sigma(r, th): return sigma0 + V*s1(r)*np.cos(th)
-        def m(r, th):     return F.m0 + V*m1(r)*np.cos(th)
-        return sigma, m
-
-    # second-order add-ons
-    rA, s0A, m0A, s2A, m2A = SO.A.r, SO.A.s0, SO.A.m0, SO.A.s2, SO.A.m2
-    rB, s0B, m0B, s2B, m2B = SO.B.r, SO.B.s0, SO.B.m0, SO.B.s2, SO.B.m2
-
-    
-    s0_tot = lambda rr: 1/D(m0)**2*np.interp(rr, rA, s0A) + Dp(m0)/D(m0)**3 * np.interp(rr, rB, s0B)
-    m0_tot = lambda rr: 1/D(m0)**2*np.interp(rr, rA, m0A) + Dp(m0)/D(m0)**3 * np.interp(rr, rB, m0B)
-    s2_tot = lambda rr: 1/D(m0)**2*np.interp(rr, rA, s2A) + Dp(m0)/D(m0)**3 * np.interp(rr, rB, s2B)
-    m2_tot = lambda rr: 1/D(m0)**2*np.interp(rr, rA, m2A) + Dp(m0)/D(m0)**3 * np.interp(rr, rB, m2B)
-
-    def sigma(r, th):
-        return sigma0 + V*s1(r)*np.cos(th) + (V**2)*( s0_tot(r) + s2_tot(r)*np.cos(2*th) )
-    def m(r, th):
-        return F.m0 + V*m1(r)*np.cos(th) + (V**2)*( m0_tot(r) +m2_tot(r)*np.cos(2*th))
-    return sigma, m
 
 # -------------------- Discrete operators & residuals -------------------
 

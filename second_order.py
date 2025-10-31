@@ -86,34 +86,58 @@ def _build_mesh(R0: float, eps_factor: float, N_init: int, mesh_power: float) ->
     return eps + (R0 - eps) * (s**mesh_power)
 
 # ---- L_n^{-1} q via Green's integral (regular at 0, Neumann at R0) ----
-def _Ln_inverse_neumann(n: int, q: Callable[[np.ndarray], np.ndarray], r: np.ndarray, R0: float) -> np.ndarray:
+# ---- L_n^{-1} q via Green's integral (regular at 0, Neumann at R0) ----
+def _Ln_inverse_neumann(
+    n: int,
+    q: Callable[[np.ndarray], np.ndarray],
+    r: np.ndarray,
+    R0: float,
+    neuman_bc: float = 0.0,   # NEW: enforce u'(R0) = neuman_bc (default 0.0)
+) -> np.ndarray:
+    """
+    Solve L_n u = q on (0,R0), regular at 0, with Neumann condition u'(R0) = neuman_bc.
+
+    For n > 0, the regular general solution is
+        u(r) = a r^n + (r^n)/(2n) ∫_0^r s^{1-n} q(s) ds - (r^{-n})/(2n) ∫_0^r s^{n+1} q(s) ds,
+    and choosing
+        a = neuman_bc / (n R0^{n-1}) - (1/(2n)) I1(R0) - (1/(2n)) R0^{-2n} I2(R0)
+    ensures u'(R0) = neuman_bc exactly.
+
+    For n = 0, regularity eliminates the ln r homogeneous piece, so u'(R0) is fixed by q:
+        u'(r) = (1/r) ∫_0^r s q(s) ds  ⇒  u'(R0) = (1/R0) ∫_0^{R0} s q(s) ds.
+    A nonzero target neuman_bc therefore requires the compatibility ∫_0^{R0} s q(s) ds = neuman_bc * R0.
+    """
     rr = r
     qv = q(rr)
 
     if n > 0:
         # I1(r) = ∫_0^r s^{1-n} q(s) ds,  I2(r) = ∫_0^r s^{n+1} q(s) ds
-        I1 = _cumtrapz_from_zero((rr**(1-n))*qv, rr)
-        I2 = _cumtrapz_from_zero((rr**(n+1))*qv, rr)
-        # A from u'(R0)=0
-        #A = -0.5*( I1[-1] + (R0**(-2*n))*I2[-1] )/n
-        #A = - 2*float(q(np.array(R0)))/ (n**2 * R0**(n-2)) + 1/(2*n)*I1[-1] -1/(2*n)*R0**(-2*n) * I2[-1] 
-        A = -1/(2*n)*I1[-1] -R0**(-2*n)/(2*n)*I2[-1]
-        u = A*(rr**n) + (rr**n)*I1/(2*n) - (rr**(-n))*I2/(2*n)
+        I1 = _cumtrapz_from_zero((rr**(1-n)) * qv, rr)
+        I2 = _cumtrapz_from_zero((rr**(n+1)) * qv, rr)
+
+        # a from u'(R0) = neuman_bc:
+        # u'(R0) = a n R0^{n-1} + 0.5 R0^{n-1} I1(R0) + 0.5 R0^{-n-1} I2(R0)
+        a = (neuman_bc / (n * R0**(n-1))) - (I1[-1] / (2*n)) - (R0**(-2*n) * I2[-1] / (2*n))
+
+        u = a * (rr**n) + (rr**n) * I1 / (2*n) - (rr**(-n)) * I2 / (2*n)
         return u
-    else:                   
-        # n = 0: u(r) = A - ∫_0^r s ln s q(s) ds + (ln r) ∫_0^r s q(s) ds
-        F1 = _cumtrapz_from_zero(rr*qv, rr)
-        # handle ln at first point safely
+
+    else:
+        # n = 0: u(r) = C - ∫_0^r s ln s q(s) ds + (ln r) ∫_0^r s q(s) ds
+        F1 = _cumtrapz_from_zero(rr * qv, rr)            # ∫_0^r s q(s) ds
         ln_r = np.log(rr)
-        F2 = _cumtrapz_from_zero(rr*ln_r*qv, rr)
-        # compatibility for Neumann: u'(R0) = (1/R0) F1(R0) = 0
-        comp = F1[-1]
-        if abs(comp) > 1e-10*abs(F1[-1] + 1e-30):
-            # You can raise if you prefer strictness:
-            # raise RuntimeError(f"Neumann compatibility fails for n=0: ∫_0^{R0} s q(s) ds = {comp}")
+        F2 = _cumtrapz_from_zero(rr * ln_r * qv, rr)     # ∫_0^r s ln s q(s) ds
+
+        # Compatibility for regular Neumann: u'(R0) = F1(R0)/R0 must equal neuman_bc
+        comp = F1[-1] / R0
+        # Keep behavior non-intrusive: warn if incompatible (you may raise instead)
+        if abs(comp - neuman_bc) > 1e-10 * (abs(comp) + 1.0):
+            # print or log a warning if you have a logger; we just pass silently here:
+            # warnings.warn(f"n=0 Neumann target {neuman_bc} incompatible with forcing; using u'(R0)={comp}.")
             pass
-        A = 0.0  # gauge (constant is nullspace)
-        u = A - F2 + ln_r*F1
+
+        C = 0.0  # gauge (constant nullspace)
+        u = C - F2 + ln_r * F1
         return u
 
 # ---- Solve σ from (L_n + κ^2)σ = f with σ'(R0)=0 using modified-Bessel integral repr. ----
@@ -232,3 +256,41 @@ def compute_second_order(
     return SecondOrderAll(A=A_piece, B=B_piece,
                           rho20A=rho20A, rho22A=rho22A,
                           rho20B=rho20B, rho22B=rho22B)
+
+
+
+# -------------------- Field assembly up to order in V ------------------
+
+def build_sigma_m(F, SO, D, Dp, V: float, order: int = 1):
+    """
+    Construct σ(r,θ), m(r,θ) up to given order in V using F and SO.
+    order=1: σ = σ0 + V σ1 cosθ;   m = m0 + V m1 cosθ
+    order=2: add V^2 (n=0,2) from SO.A+SO.B
+    Returns two vectorized callables (r,θ)->array.
+    """
+    m0 = F.m0
+    sigma0 = F.P * m0  # makes ZΔσ0 - σ0 + P m0 = 0
+    s1 = lambda r: F.s11(r)
+    m1 = lambda r: F.m11(r)
+
+    if order == 1:
+        def sigma(r, th): return sigma0 + V*s1(r)*np.cos(th)
+        def m(r, th):     return F.m0 + V*m1(r)*np.cos(th)
+        return sigma, m
+
+    # second-order add-ons
+    rA, s0A, m0A, s2A, m2A = SO.A.r, SO.A.s0, SO.A.m0, SO.A.s2, SO.A.m2
+    rB, s0B, m0B, s2B, m2B = SO.B.r, SO.B.s0, SO.B.m0, SO.B.s2, SO.B.m2
+
+    
+    s0_tot = lambda rr: 1/D(m0)**2*np.interp(rr, rA, s0A) + Dp(m0)/D(m0)**3 * np.interp(rr, rB, s0B)
+    m0_tot = lambda rr: 1/D(m0)**2*np.interp(rr, rA, m0A) + Dp(m0)/D(m0)**3 * np.interp(rr, rB, m0B)
+    s2_tot = lambda rr: 1/D(m0)**2*np.interp(rr, rA, s2A) + Dp(m0)/D(m0)**3 * np.interp(rr, rB, s2B)
+    m2_tot = lambda rr: 1/D(m0)**2*np.interp(rr, rA, m2A) + Dp(m0)/D(m0)**3 * np.interp(rr, rB, m2B)
+
+    def sigma(r, th):
+        return sigma0 + V*s1(r)*np.cos(th) + (V**2)*( s0_tot(r) + s2_tot(r)*np.cos(2*th) )
+    def m(r, th):
+        return F.m0 + V*m1(r)*np.cos(th) + (V**2)*( m0_tot(r) +m2_tot(r)*np.cos(2*th))
+    return sigma, m
+           

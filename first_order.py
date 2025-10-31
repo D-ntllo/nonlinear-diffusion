@@ -20,6 +20,8 @@ class FirstOrder:
     Up: Callable[[np.ndarray], np.ndarray]
     m11_R0: float
     m11pp_R0: float
+    s11_R0: float
+    s11pp_R0: float
 
 def build_first_order(P: float, Z: float, gamma: float,
                       root_index: int = 0) -> FirstOrder:
@@ -48,6 +50,8 @@ def build_first_order(P: float, Z: float, gamma: float,
 
     m11_R0   = float(m11(np.array([R0])))
     m11pp_R0 = float(m11pp(np.array([R0])))
+    s11_R0   = float(s11(np.array([R0])))
+    s11pp_R0 = float(s11pp(np.array([R0])))
 
     return FirstOrder(R0, m0, Z, P,gamma, Khat0, alpha,
-                      s11, s11p, s11pp, m11, m11p, m11pp, U, Up, m11_R0, m11pp_R0)
+                      s11, s11p, s11pp, m11, m11p, m11pp, U, Up, m11_R0, m11pp_R0, s11_R0, s11pp_R0)

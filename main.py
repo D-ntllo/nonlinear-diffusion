@@ -4,6 +4,7 @@ from second_order import *
 from compute_Ai import *
 from verify_numerics import *
 from velocity_scaling_plots import *
+from check_k2 import *
 
 if __name__ == "__main__":
     P,Z,gamma = 0.015915, 0.159155, 0.0025
@@ -15,6 +16,11 @@ if __name__ == "__main__":
 
     # diffusion model and K
     D, Dp, Dpp = D_vdW(e_a=0.0, m_inf=10.0)  # or your own D(m)
+    As = compute_Ais(F,SO)
+
+    k2 = K2_from_Ai(As, D(F.m0),Dp(F.m0), Dpp(F.m0))
+    k2 = K2_from_Ai(As, 1,0,0)
+    #print(check_k2_consistent(F, SO, D, Dp, Dpp, k2))
     #D0 = D_of_m(F.m0)                            # D(m0)
 
     # compute arrays and plot
@@ -39,21 +45,21 @@ if __name__ == "__main__":
           f"dir {int(c['left_sign'])}→{int(c['right_sign'])}")
         
 
-    P_vals     = np.linspace(0.01, 0.025, 5)
-    Z_vals     = [1.25]          # or a small linspace
-    gamma_vals = np.linspace(0.001, 0.01, 4)
+    # P_vals     = np.linspace(0.01, 0.025, 5)
+    # Z_vals     = [1.25]          # or a small linspace
+    # gamma_vals = np.linspace(0.001, 0.01, 4)
 
-    res = sweep_params_for_bif_change(
-        P_vals, Z_vals, gamma_vals,
-        eA_min=0.0, eA_max=1.0,
-        m_inf=10.0,
-        n_scan=801,             # dense e_A sampling improves bracketing
-        second_order_N=300,
-        verbose=True
-    )
+    # res = sweep_params_for_bif_change(
+    #     P_vals, Z_vals, gamma_vals,
+    #     eA_min=0.0, eA_max=1.0,
+    #     m_inf=10.0,
+    #     n_scan=801,             # dense e_A sampling improves bracketing
+    #     second_order_N=300,
+    #     verbose=True
+    # )
     
-    # Extract all parameter triples with a +→− crossing
-    hits = [r for r in res if r.get('ok') and r.get('changed_to_negative')]
-    print(f"\nFound {len(hits)} triples with change-to-negative:")
-    for h in hits:
-        print(f"  P={h['P']}, Z={h['Z']}, γ={h['gamma']}, root_eA≈{h['root_eA']}")  
+    # # Extract all parameter triples with a +→− crossing
+    # hits = [r for r in res if r.get('ok') and r.get('changed_to_negative')]
+    # print(f"\nFound {len(hits)} triples with change-to-negative:")
+    # for h in hits:
+    #     print(f"  P={h['P']}, Z={h['Z']}, γ={h['gamma']}, root_eA≈{h['root_eA']}")  

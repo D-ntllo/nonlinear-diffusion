@@ -8,21 +8,61 @@ from second_order import *
 
 #---- nested quadratures for Ã_i in (38)–(41) ----------
 
+import numpy as np
+from typing import Callable
+
 def _nested_quads(R0: float,
                   U: Callable[[np.ndarray], np.ndarray],
-                  Up: Callable[[np.ndarray], np.ndarray],
-                  f: np.ndarray,
+                  Up: Callable[[np.ndarray], np.ndarray],  # kept for API compatibility (unused)
+                  f: np.ndarray,                           # f ≡ f1(r) sampled on grid r
                   r: np.ndarray,
                   P: float) -> float:
-    S2 = np.cumsum(0.5*( (r[1:]**2)*f[1:] + (r[:-1]**2)*f[:-1]) * np.diff(r))
-    S2 = np.concatenate([[0.0], S2])          # ∫_0^r s^2 f(s) ds
-    Fr = np.cumsum(0.5*(f[::-1][1:] + f[::-1][:-1])*np.diff(r)[::-1])[::-1]
-    Fr = np.concatenate([Fr, [0.0]])          # ∫_r^{R0} f(s) ds
+    """
+    Compute:
+      P * ∫_0^{R0} [ (1/2) * S2(r) + (r^2/2) * Fr(r) + (r^2/(2 R0^2)) * S2_total ] * U(r) dr
+    where
+      S2(r)      = ∫_0^r s^2 f(s) ds,
+      Fr(r)      = ∫_r^{R0} f(s) ds,
+      S2_total   = ∫_0^{R0} s^2 f(s) ds,
+    using trapezoidal rules on the grid r.
 
-    I1 = (P/R0**2) * np.trapz((r**2)*U(r), r) * np.trapz((r**2)*f, r)
-    I2 =  P * np.trapz( (r**2)*U(r) * Fr, r)
-    I3 = -P * np.trapz( U(r) * S2, r)
-    return I1 + I2 + I3
+    Args:
+        R0: upper limit of integration (should equal r[-1])
+        U:  callable returning U(r) array
+        Up: callable for U'(r) (unused here; kept to match the previous signature)
+        f:  array of f1(r) values on the same grid as r
+        r:  1D, strictly increasing grid from 0 to R0
+        P:  scalar prefactor
+
+    Returns:
+        Scalar value of the integral.
+    """
+    r = np.asarray(r, dtype=float)
+    f = np.asarray(f, dtype=float)
+
+    if r.ndim != 1 or f.shape != r.shape:
+        raise ValueError("r must be 1D and f must have the same shape as r.")
+    dr = np.diff(r)
+    if np.any(dr <= 0):
+        raise ValueError("r must be strictly increasing.")
+
+    # S2(r) = ∫_0^r s^2 f(s) ds (cumulative trapezoid)
+    S2 = np.concatenate((
+        [0.0],
+        np.cumsum(0.5 * ((r[1:]**2)*f[1:] + (r[:-1]**2)*f[:-1]) * dr)
+    ))
+    S2_total = S2[-1]
+
+    # Fr(r) = ∫_r^{R0} f(s) ds (reverse cumulative trapezoid)
+    Fr_rev_cum = np.cumsum(0.5 * (f[::-1][1:] + f[::-1][:-1]) * dr[::-1])
+    Fr = np.concatenate((Fr_rev_cum[::-1], [0.0]))
+
+    Ur = U(r)
+    integrand = (0.5 * S2
+                 + 0.5 * (r**2) * Fr
+                 + 0.5 * (r**2) * (S2_total / (R0**2))) * Ur
+
+    return P * np.trapz(integrand, r)
 
 # ---------- f1..f4 from (161)–(164) ----------
 def _compute_fi_arrays(F: FirstOrder, SO: SecondOrderAll) -> Dict[str, np.ndarray]:
@@ -54,52 +94,56 @@ def _compute_fi_arrays(F: FirstOrder, SO: SecondOrderAll) -> Dict[str, np.ndarra
 
     K0h = F.Khat0  # K̂0
 
-    # --- f1 (161)
-    f1 = -(1.0/(4.0*s**2)) * (
-            m11**3
-            - 6.0*(s**2)*m11*(m11p**2)
-            - 3.0*s*(m11**2)*(m11p + s*m11pp)
-         )
-
-    # --- f2 (162)  (uses B-piece only)
-    f2 = -(1.0/(s**2)) * (
-            2.0*m11*m20B + 4.0*m11*m22B
-          - 2.0*s*m20B*m11p - 1.0*s*m22B*m11p
-          - 2.0*s*m11*m20B_p - 4.0*(s**2)*m11p*m20B_p
-          - 1.0*s*m11*m22B_p - 2.0*(s**2)*m11p*m22B_p
-          - 2.0*(s**2)*m20B*m11pp - (s**2)*m22B*m11pp
-          - 2.0*(s**2)*m11*m20B_pp - (s**2)*m11*m22B_pp
-         )
-
-    # --- f3 (163)  (A/B mix + σ_B; all hats/ρ-independent here)
-    f3 = -(1.0/(4.0*s**2)) * (
-          8.0*m11*m20A - 4.0*K0h*s11*m20B + 4.0*m11*m22A + 2.0*K0h*s11*m22B
-        - 4.0*K0h*m11*s22B
-        - 8.0*s*m20A*m11p - 4.0*s*m22A*m11p
-        + 4.0*K0h*s*m20B*s11p + 2.0*K0h*s*m22B*s11p
-        - 8.0*s*m11*m20A_p - 16.0*(s**2)*m11p*m20A_p - 4.0*(s**3)*m20B_p
-        + 4.0*K0h*(s**2)*s11p*m20B_p
-        - 4.0*s*m11*m22A_p - 8.0*(s**2)*m11p*m22A_p - 2.0*(s**3)*m22B_p
-        + 2.0*K0h*(s**2)*s11p*m22B_p
-        + 4.0*K0h*s*m11*s20B_p + 4.0*K0h*(s**2)*m11p*s20B_p
-        + 2.0*K0h*s*m11*s22B_p + 2.0*K0h*(s**2)*m11p*s22B_p
-        - 8.0*(s**2)*m20A*m11pp - 4.0*(s**2)*m22A*m11pp
-        + 4.0*K0h*(s**2)*m20B*s11pp + 2.0*K0h*(s**2)*m22B*s11pp
-        - 8.0*(s**2)*m11*m20A_pp - 4.0*(s**2)*m11*m22A_pp
-        + 4.0*K0h*(s**2)*m11*s20B_pp + 2.0*K0h*(s**2)*m11*s22B_pp
+    # --- f1
+    f1 = (1.0 / (8.0 * r**2)) * m11 * (
+        - m11**2
+        + 6.0 * (r**2) * (m11p**2)
+        + 3.0 * r * m11 * (m11p + r * m11pp)
         )
 
-    # --- f4 (164)  (A-piece with σ_A)
-    f4 = -(1.0/(4.0*s**2)) * (
-         -4.0*K0h*s11*m20A + 2.0*K0h*s11*m22A - 4.0*K0h*m11*s22A
-         + 4.0*K0h*s*m20A*s11p + 2.0*K0h*s*m22A*s11p
-         - 4.0*(s**3)*m20A_p + 4.0*K0h*(s**2)*s11p*m20A_p
-         - 2.0*(s**3)*m22A_p + 2.0*K0h*(s**2)*s11p*m22A_p
-         + 4.0*K0h*s*m11*s20A_p + 4.0*K0h*(s**2)*m11p*s20A_p
-         + 2.0*K0h*s*m11*s22A_p + 2.0*K0h*(s**2)*m11p*s22A_p
-         + 4.0*K0h*(s**2)*m20A*s11pp + 2.0*K0h*(s**2)*m22A*s11pp
-         + 4.0*K0h*(s**2)*m11*s20A_pp + 2.0*K0h*(s**2)*m11*s22A_pp
-         )
+    # --- f2
+    f2 = (1.0 / (2.0 * r**2)) * (
+    r * (
+        2.0 * r * m11p * (2.0 * m20B_p + m22B_p)
+        + 2.0 * m20B * (m11p + r * m11pp)
+    )
+    + r * m22B * (m11p + r * m11pp)
+    + m11 * (-2.0 * m20B - m22B)
+    + m11 * r * (2.0 * m20B_p + m22B_p + 2.0 * r * m20B_pp + r * m22B_pp)
+    )
+
+    # --- f3
+    f3 = (1.0 / (2.0 * r**2)) * (
+    r * (
+        2.0 * m22B
+        + m22A * m11p
+        + 4.0 * r * m11p * m20A_p
+        + 2.0 * r * m20B_p
+        + 2.0 * r * m11p * m22A_p
+        + r * m22B_p
+        - 2.0 * K0h * r * m11p * s20B_p
+        - K0h * r * m11p * s22B_p
+        + r * m22A * m11pp
+        + 2.0 * m20A * (m11p + r * m11pp)
+        )
+    - m11 * (
+        2.0 * m20A + m22A - 2.0 * K0h * s22B
+        - 2.0 * r * m20A_p - r * m22A_p
+        + 2.0 * K0h * r * s20B_p + K0h * r * s22B_p
+        - 2.0 * r**2 * m20A_pp - r**2 * m22A_pp
+        + 2.0 * K0h * r**2 * s20B_pp + K0h * r**2 * s22B_pp
+            )
+    )
+
+    # --- f4
+    f4 = (1.0 / (2.0 * r**2)) * (
+    2.0 * r * m22A
+    + r**2 * (2.0 * m20A_p + m22A_p - K0h * m11p * (2.0 * s20A_p + s22A_p))
+    + K0h * m11 * (
+        2.0 * s22A
+        - r * (2.0 * s20A_p + s22A_p + 2.0 * r * s20A_pp + r * s22A_pp)
+            )
+    )
 
     return dict(f1=f1, f2=f2, f3=f3, f4=f4)
 
@@ -109,44 +153,45 @@ def compute_Ais(F: FirstOrder, SO: SecondOrderAll) -> Dict[str, float]:
     R0, P = F.R0, F.P
     U, Up  = F.U, F.Up
 
-    # --- A0 from your corrected eq. (36):
-    # A0 = (Z R0)/Khat0^2 - P m0 * ∫ ( m11(r) + r/Khat0 ) U(r) dr
-    IU_kernel = np.trapz( (F.m11(r) + r/F.Khat0) * U(r), r )
+    # --- A0
+    # A0 = (Z R0)/Khat0^2 - P m0 * ∫ r ( m11(r) + r/Khat0 ) U(r) dr
+    IU_kernel = np.trapz(r*(F.m11(r) + r/F.Khat0) * U(r), r )
     A0 = (F.Z * R0) / (F.Khat0**2) - P * F.m0 * IU_kernel
-    print("A0", A0) 
+
     # these are still needed for Ã3/Ã4 boundary pieces
     IU_r2 = np.trapz( (r**2) * U(r), r )
 
     fis = _compute_fi_arrays(F, SO)
 
-    # (38)–(39)
+    # --- A1
     A1t = _nested_quads(R0, U, Up, fis["f1"], r, P)
-    print("A1t", A1t)
-    A2t = _nested_quads(R0, U, Up, fis["f2"], r, P)
-    print("A2t", A2t)
-    # (40) + boundary terms
-    A3t  = _nested_quads(R0, U, Up, fis["f3"], r, P)
-    print("A3t", A3t)
-    A3t += P * ( -2.0*SO.rho22B*F.m11_R0
-                 + (F.Khat0*F.m0 - 1.0)*(R0**2)*(2.0*SO.rho20B + SO.rho22B)*F.m11pp_R0
-               ) * ( IU_r2 / (2.0*R0**2) )
-    print("A3t1", A3t)
-    A3t += ( F.alpha * J1p(F.alpha) / (F.Khat0 * J1(F.alpha)) ) * ( -2.0*SO.rho20B + SO.rho22B ) * F.Z
-    print("A3t2", A3t)
-    A3t += (2.0*SO.rho20B + SO.rho22B) * F.m11pp_R0
-    print("A3t3", A3t)
+    
 
-    # (41) + boundary terms
+    # --- A2
+    A2t = _nested_quads(R0, U, Up, fis["f2"], r, P)
+
+
+
+    # --- A3
+    A3t  = _nested_quads(R0, U, Up, fis["f3"], r, P)
+
+    A3t += IU_r2*P*(
+        (SO.rho20B+SO.rho22B/2)*(F.Khat0*F.m0*F.s11pp_R0-F.m11pp_R0)
+        -SO.rho22B*F.m11_R0/R0**2
+    )
+
+    A3t += -F.Z*R0*(SO.rho20B+SO.rho22B/2)*(F.s11pp_R0- F.alpha * J1p(F.alpha) / (R0*F.Khat0 * J1(F.alpha)))
+
+
+    # --- A4
     A4t  = _nested_quads(R0, U, Up, fis["f4"], r, P)
-    print("A4t", A4t)
-    A4t += P * ( -2.0*SO.rho22A*F.m11_R0
-                 + (F.Khat0*F.m0 - 1.0)*(R0**2)*(2.0*SO.rho20A + SO.rho22A)*F.m11pp_R0
-               ) * ( IU_r2 / (2.0*R0**2) )
-    print("A4t1", A4t)
-    A4t += ( F.alpha * J1p(F.alpha) / (2.0*F.Khat0 * J1(F.alpha)) ) * ( -2.0*SO.rho20A + SO.rho22A ) * F.Z
-    print("A4t2", A4t)
-    A4t += (2.0*SO.rho20A + SO.rho22A) * F.m11pp_R0
-    print("A4t3", A4t)
+
+    A3t += IU_r2*P*(
+        (SO.rho20A+SO.rho22A/2)*(F.Khat0*F.m0*F.s11pp_R0-F.m11pp_R0)
+        -SO.rho22A*F.m11_R0/R0**2
+    )
+
+    A3t += -F.Z*R0*(SO.rho20A+SO.rho22A/2)*(F.s11pp_R0- F.alpha * J1p(F.alpha) / (R0*F.Khat0 * J1(F.alpha)))
 
     # normalize
     A1 = A1t / A0
@@ -154,14 +199,14 @@ def compute_Ais(F: FirstOrder, SO: SecondOrderAll) -> Dict[str, float]:
     A3 = A3t / A0
     A4 = A4t / A0
 
-    print("A1",A1, "A2", A2, "A3", A3, "A4",A4)
+    #print("A1",A1, "A2", A2, "A3", A3, "A4",A4)
     return dict(A0=A0, A1=A1, A2=A2, A3=A3, A4=A4,
                 meta=dict(R0=F.R0, m0=F.m0, Khat0=F.Khat0, alpha=F.alpha))
 
 
 # ---------- K2 from (37)/(19) ----------
 def K2_from_Ai(A: Dict[str, float], D0: float, Dp: float, Dpp: float) -> float:
-    return (A["A1"]*Dpp/(D0**4) + A["A2"]*(Dp*Dp)/(D0**5) + A["A3"]*Dp/(D0**4) + A["A4"]/(D0**3))
+    return (A["A1"]*Dpp/(D0**2) + A["A2"]*(Dp*Dp)/(D0**3) + A["A3"]*Dp/(D0**2) + A["A4"]/(D0))
 
 
 # -- VdW model
