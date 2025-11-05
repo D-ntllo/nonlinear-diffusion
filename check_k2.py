@@ -58,8 +58,9 @@ class K2LoT:
     q31: np.ndarray
     sR0_target: float
     bracket_c: float
+    bracket_s: float
 
-def make_forcings_ms31_consistent(F, SO, D, Dp, Dpp, K2: float) -> K2LoT:
+def make_forcings_ms31(F, SO, D, Dp, Dpp, K2: float) -> K2LoT:
     """
     Build q31 and boundary targets using the SAME A/B mixing as build_sigma_m:
       X_tot = (1/D(m0)^2) * X_A + (Dp(m0)/D(m0)^3) * X_B,  for X ∈ {σ_20,σ_22,m_20,m_22,ρ_20,ρ_22}.
@@ -73,18 +74,15 @@ def make_forcings_ms31_consistent(F, SO, D, Dp, Dpp, K2: float) -> K2LoT:
     R0 = float(F.R0); K0 = D0*float(F.Khat0);
     r  = np.asarray(SO.A.r, dtype=float); rr = r
 
-  
+    # first-order
 
-    # first-order callables
-    scale = 1.0 / D0
+    s11  =  1.0 / D0 * F.s11(r)
+    s11p =  1.0 / D0 * F.s11p(r)
+    s11pp=  1.0 / D0 * F.s11pp(r)
 
-    s11  = lambda x: scale * F.s11(x)
-    sp11 = lambda x: scale * F.s11p(x)
-    spp11= lambda x: scale * F.s11pp(x)
-
-    m11  = lambda x: scale * F.m11(x)
-    mp11 = lambda x: scale * F.m11p(x)
-    mpp11= lambda x: scale * F.m11pp(x)
+    m11  = 1.0 / D0 * F.m11(r)
+    m11p = 1.0 / D0 * F.m11p(r)
+    m11pp= 1.0 / D0 * F.m11pp(r)
 
     # A/B arrays
     s0A, s2A, m0A, m2A = np.asarray(SO.A.s0), np.asarray(SO.A.s2), np.asarray(SO.A.m0), np.asarray(SO.A.m2)
@@ -117,35 +115,59 @@ def make_forcings_ms31_consistent(F, SO, D, Dp, Dpp, K2: float) -> K2LoT:
     m22p, m22pp = d1(m22), d2(m22)
 
     # Long f(r)
-    term1 = Dpp0 * (m11(rr)**3)
-    term2 = -3*Dpp0 * rr * (m11(rr)**2) * (mp11(rr) + rr * mpp11(rr))
-    term3 = -2*rr * ( 2*rr**2 * m20p + 8*Dp0 * rr * mp11(rr) * m20p
-                      + rr**2 * m22p + 4*Dp0 * rr * mp11(rr) * m22p
-                      + 4*Dp0 * m20 * (mp11(rr) + rr * mpp11(rr))
-                      + 2*Dp0 * m22 * (mp11(rr) + rr * mpp11(rr)) )
-    term4 = 2*m11(rr) * ( 4*Dp0*m20 + 2*Dp0*m22 - 2*K0*s22
-                          - 3*Dpp0 * rr**2 * (mp11(rr)**2)
-                          - 4*Dp0 * rr * m20p - 2*Dp0 * rr * m22p
-                          + 2*rr*K0*s20p + rr*K0*s22p
-                          - 4*Dp0 * rr**2 * m20pp - 2*Dp0 * rr**2 * m22pp
-                          + 2*rr**2 * K0 * s20pp + rr**2 * K0 * s22pp )
-    term5 = 2*K0 * ( 2*rr**2 * m20p * sp11(rr) + rr**2 * m22p * sp11(rr)
-                     + 2*rr**2 * mp11(rr) * s20p + rr**2 * mp11(rr) * s22p
-                     + m22 * ( s11(rr) + rr*(sp11(rr) + rr*spp11(rr)) )
-                     + m20 * ( -2*s11(rr) + 2*rr*(sp11(rr) + rr*spp11(rr)) ) )
-    f_r = - (term1 + term2 + term3 + term4 + term5) / (4*rr**2)
+    f = (
+    (Dpp0 / (8.0 * r**2)) * (
+        - m11**3
+        + 6.0 * r**2 * m11 * (m11p**2)
+        + 3.0 * r * (m11**2) * (m11p + r * m11pp)
+    )
+    + (Dp0 / (8.0 * r**2)) * (
+        - 8.0 * m11 * m20
+        - 4.0 * m11 * m22
+        + 8.0 * r * m20 * m11p
+        + 4.0 * r * m22 * m11p
+        + 8.0 * r * m11 * m20p
+        + 16.0 * r**2 * m11p * m20p
+        + 4.0 * r * m11 * m22p
+        + 8.0 * r**2 * m11p * m22p
+        + 8.0 * r**2 * m20 * m11pp
+        + 4.0 * r**2 * m22 * m11pp
+        + 8.0 * r**2 * m11 * m20pp
+        + 4.0 * r**2 * m11 * m22pp
+    )
+    + (1.0 / (8.0 * r**2)) * (
+        8.0 * K0 * m20 * s11
+        - 4.0 * K0 * m22 * s11
+        + 8.0 * K0 * m11 * s22
+        + 8.0 * r**3 * m20p
+        + 4.0 * r**3 * m22p
+        - 8.0 * r * K0 * m20 * s11p
+        - 4.0 * r * K0 * m22 * s11p
+        - 8.0 * r**2 * K0 * m20p * s11p
+        - 4.0 * r**2 * K0 * m22p * s11p
+        - 8.0 * r * K0 * m11 * s20p
+        - 4.0 * r * K0 * m11 * s22p
+        - 4.0 * r**2 * K0 * m11p * s22p
+        - 8.0 * r**2 * K0 * m20 * s11pp
+        - 4.0 * r**2 * K0 * m22 * s11pp
+        - 8.0 * r**2 * K0 * m11p * s20p
+        - 8.0 * r**2 * K0 * m11 * s20pp
+        - 4.0 * r**2 * K0 * m11 * s22pp
+    )
+)
 
     # g(r) for the K2 term
-    g_r = (mpp11(rr) / (rr**2)) - (mp11(rr) / rr) + mpp11(rr)
+    g_r = -(s11 / (rr**2)) - (s11p / rr) + s11pp
 
-    # q31: L1 u = q31
-    q31 = (K2 * m0 / D0) * g_r - f_r / D0
+    # q31: L1 u = q31. u = m31-K0m0/D0*s31
+    q31 = (K2 * m0 / D0) * g_r - f / D0
 
     # Dirichlet target for σ31 and bracket for m31' BC
-    sR0_target = - (rho20 + 0.5*rho22) * float(sp11(R0))
-    bracket_c  = (rho20 + 0.5*rho22) * float(mpp11(R0)) + (rho22 / (R0**2)) * float(m11(R0))
+    sR0_target = - (rho20 + 0.5*rho22) * float(F.s11p(R0))
+    bracket_c  = (rho20 + 0.5*rho22) * float(F.m11pp(R0)) + (rho22 / (R0**2)) * float(F.m11(R0))
+    bracket_s  = (rho20 + 0.5*rho22) * float(F.s11pp(R0)) + (rho22 / (R0**2)) * float(F.s11(R0)) + K2/K0 * F.s11p(R0)
 
-    return K2LoT(r=r, q31=q31, sR0_target=sR0_target, bracket_c=bracket_c)
+    return K2LoT(r=r, q31=q31, sR0_target=sR0_target, bracket_c=bracket_c, bracket_s= bracket_s)
 
 # -------------------- main checker --------------------
 
@@ -162,11 +184,11 @@ def check_k2_consistent(F, SO, D, Dp, Dpp, K2: float) -> Dict[str, Any]:
 
     K0 = D0*Khat0
 
-    lot = make_forcings_ms31_consistent(F, SO, D, Dp, Dpp, K2)
+    lot = make_forcings_ms31(F, SO, D, Dp, Dpp, K2)
     r = lot.r
 
     # Step 1: u = L1^{-1} q31 (regular; we will add A r from BC)
-    u_reg = _Ln_inverse_neumann(1, lambda rr: np.interp(rr, r, lot.q31), r, R0, neuman_bc= lot.bracket_c)
+    u_reg = _Ln_inverse_neumann(1, lambda rr: np.interp(rr, r, lot.q31), r, R0, neuman_bc= -lot.bracket_c+K0*m0/D0*lot.bracket_s)
 
     # Step 2: (L1 - κ^2) σ = (P/Z) u, with κ^2 = (1 + (P K0 m0)/D0) / Z
     kappa2 = (1.0 + (P*K0*m0)/D0) / Z
@@ -195,8 +217,8 @@ def check_k2_consistent(F, SO, D, Dp, Dpp, K2: float) -> Dict[str, Any]:
 
     # Compatibility residual (ms31_e)
     s31p_R0 = float(_deriv_central(sigma31, r)[-1])
-    rho20 = None; rho22 = None  # already used inside lot to build targets
-    res = K2*float(F.s11p(R0)) + K0*( s31p_R0 + lot.bracket_c )
+   
+    res = K2*float(F.s11p(R0)) + K0*( s31p_R0 + lot.bracket_s)
 
     return dict(
         residual_bc=float(abs(res)),

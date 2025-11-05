@@ -156,7 +156,7 @@ def compute_Ais(F: FirstOrder, SO: SecondOrderAll) -> Dict[str, float]:
     # --- A0
     # A0 = (Z R0)/Khat0^2 - P m0 * ∫ r ( m11(r) + r/Khat0 ) U(r) dr
     IU_kernel = np.trapz(r*(F.m11(r) + r/F.Khat0) * U(r), r )
-    A0 = (F.Z * R0) / (F.Khat0**2) - P * F.m0 * IU_kernel
+    A0 = (F.Z * R0) / (F.Khat0**2) + P * F.m0 * IU_kernel
 
     # these are still needed for Ã3/Ã4 boundary pieces
     IU_r2 = np.trapz( (r**2) * U(r), r )
@@ -175,7 +175,7 @@ def compute_Ais(F: FirstOrder, SO: SecondOrderAll) -> Dict[str, float]:
     # --- A3
     A3t  = _nested_quads(R0, U, Up, fis["f3"], r, P)
 
-    A3t += IU_r2*P*(
+    A3t -= IU_r2*P*(
         (SO.rho20B+SO.rho22B/2)*(F.Khat0*F.m0*F.s11pp_R0-F.m11pp_R0)
         -SO.rho22B*F.m11_R0/R0**2
     )
@@ -186,12 +186,12 @@ def compute_Ais(F: FirstOrder, SO: SecondOrderAll) -> Dict[str, float]:
     # --- A4
     A4t  = _nested_quads(R0, U, Up, fis["f4"], r, P)
 
-    A3t += IU_r2*P*(
+    A4t -= IU_r2*P*(
         (SO.rho20A+SO.rho22A/2)*(F.Khat0*F.m0*F.s11pp_R0-F.m11pp_R0)
         -SO.rho22A*F.m11_R0/R0**2
     )
 
-    A3t += -F.Z*R0*(SO.rho20A+SO.rho22A/2)*(F.s11pp_R0- F.alpha * J1p(F.alpha) / (R0*F.Khat0 * J1(F.alpha)))
+    A4t += -F.Z*R0*(SO.rho20A+SO.rho22A/2)*(F.s11pp_R0- F.alpha * J1p(F.alpha) / (R0*F.Khat0 * J1(F.alpha)))
 
     # normalize
     A1 = A1t / A0

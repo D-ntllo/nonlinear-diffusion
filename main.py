@@ -17,10 +17,11 @@ if __name__ == "__main__":
     # diffusion model and K
     D, Dp, Dpp = D_vdW(e_a=0.0, m_inf=10.0)  # or your own D(m)
     As = compute_Ais(F,SO)
+    print(As)
 
     k2 = K2_from_Ai(As, D(F.m0),Dp(F.m0), Dpp(F.m0))
     k2 = K2_from_Ai(As, 1,0,0)
-    #print(check_k2_consistent(F, SO, D, Dp, Dpp, k2))
+    print(check_k2_consistent(F, SO, D, Dp, Dpp, k2))
     #D0 = D_of_m(F.m0)                            # D(m0)
 
     # compute arrays and plot

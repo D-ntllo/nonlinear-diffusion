@@ -86,13 +86,12 @@ def _build_mesh(R0: float, eps_factor: float, N_init: int, mesh_power: float) ->
     return eps + (R0 - eps) * (s**mesh_power)
 
 # ---- L_n^{-1} q via Green's integral (regular at 0, Neumann at R0) ----
-# ---- L_n^{-1} q via Green's integral (regular at 0, Neumann at R0) ----
 def _Ln_inverse_neumann(
     n: int,
     q: Callable[[np.ndarray], np.ndarray],
     r: np.ndarray,
     R0: float,
-    neuman_bc: float = 0.0,   # NEW: enforce u'(R0) = neuman_bc (default 0.0)
+    neuman_bc: float = 0.0,   # enforce u'(R0) = neuman_bc (default 0.0)
 ) -> np.ndarray:
     """
     Solve L_n u = q on (0,R0), regular at 0, with Neumann condition u'(R0) = neuman_bc.
