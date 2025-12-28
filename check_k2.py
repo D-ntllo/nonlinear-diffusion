@@ -1,11 +1,13 @@
 
 import numpy as np
+import math
 from typing import Dict, Any, Tuple
 from dataclasses import dataclass
 
 # Reuse your solvers
 from second_order import _Ln_inverse_neumann, _cumtrapz_from_zero
 from scipy.special import iv as I, kv as K, ivp as Ip
+from scipy.special import j1, y1, jvp, yvp
 
 # -------------------- utils --------------------
 
@@ -29,26 +31,134 @@ def _cumtrapz_to_R0(y: np.ndarray, x: np.ndarray) -> np.ndarray:
     B[:-1] = np.cumsum(areas[::-1])[::-1]
     return B
 
-# Solve (L_1 - κ^2) σ = f, regular at 0, with Dirichlet σ(R0)=target
-def _solve_sigma_modified_dirichlet(kappa: float, f: np.ndarray, r: np.ndarray, R0: float, sR0_target: float) -> Tuple[np.ndarray, float, float]:
-    rr  = np.asarray(r, dtype=float)
-    fv  = np.asarray(f, dtype=float)
-    kr  = kappa * rr
-    kr0 = kappa * R0
+# Solve (L_1 + κ^2) σ = f, regular at 0, with Dirichlet σ(R0)=target
 
-    # Dirichlet Green using ψ_D = K_1 + cD I_1 with ψ_D(R0)=0
-    cD   = - K(1, kr0) / I(1, kr0)
-    psiD = K(1, kr) + cD * I(1, kr)
+def _solve_sigma_dirichlet(
+    kappa: float,
+    f: np.ndarray,
+    r: np.ndarray,
+    R0: float,
+    sR0_target: float,
+) -> Tuple[np.ndarray, float]:
+    """
+    Solve (L_1 + kappa^2) s = f on (0, R0),
+        L_1 s = s'' + (1/r) s' - (1/r**2) s,
+    with:
+        - regularity at r = 0 (no Y1 component),
+        - Dirichlet boundary condition s(R0) = sR0_target.
 
-    Iphi = _cumtrapz_from_zero(rr * I(1, kr) * fv, rr)      # ∫_0^r s I_1(κs) f(s) ds
-    Bpsi = _cumtrapz_to_R0(rr * psiD * fv, rr)              # ∫_r^{R0} s ψ_D(κs) f(s) ds
-    sigma0 = psiD * Iphi + I(1, kr) * Bpsi                  # has σ0(R0)=0
+    Uses variation-of-parameters integral representation:
 
-    # add homogeneous to meet Dirichlet
-    phiR0 = float(I(1, kr0))
-    sigma = sigma0 + (sR0_target/phiR0) * I(1, kr)
-    sigma_p_R0 = float(_deriv_central(sigma, rr)[-1])
-    return sigma, float(sR0_target), sigma_p_R0
+        W(r) = J1(kappa r) Y1'(kappa r) - J1'(kappa r) Y1(kappa r)
+             = -2 / (pi r)
+
+        I1(r) = ∫_0^r J1(kappa rho) f(rho) / W(rho) d rho
+        I2(r) = ∫_0^r Y1(kappa rho) f(rho) / W(rho) d rho
+
+        s_p(r) = J1(kappa r) I2(r) - Y1(kappa r) I1(r)
+
+        s(r) = s_p(r) + a_reg J1(kappa r),
+        a_reg chosen so that s(R0) = sR0_target.
+
+    Also returns s'(R0), computed analytically from the same representation.
+
+    Parameters
+    ----------
+    kappa : float
+        Positive parameter (assumes kappa > 0).
+    f : np.ndarray
+        Values of the right-hand side f(r) on the grid r.
+    r : np.ndarray
+        1D grid of radii, strictly increasing, with r[0] > 0 and r[-1] = R0.
+    R0 : float
+        Outer radius; must match r[-1].
+    sR0_target : float
+        Dirichlet boundary value s(R0).
+
+    Returns
+    -------
+    s : np.ndarray
+        Approximate solution s(r) on the grid r.
+    s_prime_R0 : float
+        Approximate derivative s'(R0).
+    """
+
+    r = np.asarray(r, dtype=float)
+    f = np.asarray(f, dtype=float)
+
+    if r.ndim != 1 or f.ndim != 1:
+        raise ValueError("r and f must be 1D arrays.")
+    if r.shape != f.shape:
+        raise ValueError("r and f must have the same shape.")
+    if not np.all(np.diff(r) > 0):
+        raise ValueError("r must be strictly increasing.")
+    if not np.isclose(r[-1], R0):
+        raise ValueError("R0 must equal r[-1].")
+    if r[0] <= 0.0:
+        raise ValueError("r[0] must be > 0 (use a small positive cutoff).")
+    if kappa <= 0.0:
+        raise ValueError("kappa must be positive.")
+
+    # Fundamental solutions
+    kr = kappa * r
+    J1_vals = j1(kr)
+    Y1_vals = y1(kr)
+
+    # Derivatives w.r.t. r:
+    # d/dr J1(k r) = k * d/dx J1(x) |_{x=k r}, similarly for Y1.
+    J1p_arg = jvp(1, kr)   # derivative wrt argument
+    Y1p_arg = yvp(1, kr)
+    dJ1_dr = kappa * J1p_arg
+    dY1_dr = kappa * Y1p_arg
+
+    J1_R0 = J1_vals[-1]
+    if np.isclose(J1_R0, 0.0):
+        raise RuntimeError("J1(kappa*R0) ≈ 0; Dirichlet problem is resonant.")
+
+    # Wronskian: W(r) = -2/(pi r)
+    W_vals = -2.0 / (math.pi * r)
+
+    # Integrands for I1, I2
+    # I1(r) = ∫_0^r J1(kappa rho) f(rho) / W(rho) d rho
+    # I2(r) = ∫_0^r Y1(kappa rho) f(rho) / W(rho) d rho
+    integrand_I1 = J1_vals * f / W_vals
+    integrand_I2 = Y1_vals * f / W_vals
+
+    N = len(r)
+    I1 = np.zeros_like(r)
+    I2 = np.zeros_like(r)
+
+    # Cumulative trapezoidal integration from 0 to each r[i]
+    for i in range(1, N):
+        dr_i = r[i] - r[i - 1]
+        I1[i] = I1[i - 1] + 0.5 * dr_i * (integrand_I1[i] + integrand_I1[i - 1])
+        I2[i] = I2[i - 1] + 0.5 * dr_i * (integrand_I2[i] + integrand_I2[i - 1])
+
+    # Particular solution s_p (regular at 0)
+    s_particular = J1_vals * I2 - Y1_vals * I1
+
+    # Impose Dirichlet at R0
+    a_reg = (sR0_target - s_particular[-1]) / J1_R0
+
+    s = s_particular + a_reg * J1_vals
+
+    # Derivative of s_p:
+    # s_p = J1 I2 - Y1 I1
+    # s_p' = (dJ1/dr) I2 + J1 I2' - (dY1/dr) I1 - Y1 I1'
+    # and by construction I1'(r) = integrand_I1, I2'(r) = integrand_I2
+    s_particular_prime = (
+        dJ1_dr * I2
+        + J1_vals * integrand_I2
+        - dY1_dr * I1
+        - Y1_vals * integrand_I1
+    )
+
+    # Total derivative: s' = s_p' + a_reg * dJ1/dr
+    s_prime = s_particular_prime + a_reg * dJ1_dr
+
+    s_prime_R0 = float(s_prime[-1])
+
+    return s, s_prime_R0
 
 # -------------------- forcings with A/B weighting like build_sigma_m --------------------
 
@@ -163,7 +273,7 @@ def make_forcings_ms31(F, SO, D, Dp, Dpp, K2: float) -> K2LoT:
     q31 = (K2 * m0 / D0) * g_r - f / D0
 
     # Dirichlet target for σ31 and bracket for m31' BC
-    sR0_target = - (rho20 + 0.5*rho22) * float(F.s11p(R0))
+    sR0_target = (rho20 + 0.5*rho22) * float(F.s11p(R0))
     bracket_c  = (rho20 + 0.5*rho22) * float(F.m11pp(R0)) + (rho22 / (R0**2)) * float(F.m11(R0))
     bracket_s  = (rho20 + 0.5*rho22) * float(F.s11pp(R0)) + (rho22 / (R0**2)) * float(F.s11(R0)) + K2/K0 * F.s11p(R0)
 
@@ -188,42 +298,42 @@ def check_k2_consistent(F, SO, D, Dp, Dpp, K2: float) -> Dict[str, Any]:
     r = lot.r
 
     # Step 1: u = L1^{-1} q31 (regular; we will add A r from BC)
-    u_reg = _Ln_inverse_neumann(1, lambda rr: np.interp(rr, r, lot.q31), r, R0, neuman_bc= -lot.bracket_c+K0*m0/D0*lot.bracket_s)
+    q_reg = _Ln_inverse_neumann(1, lambda rr: np.interp(rr, r, lot.q31), r, R0, neuman_bc= -lot.bracket_c+K0*m0/D0*lot.bracket_s)
 
-    # Step 2: (L1 - κ^2) σ = (P/Z) u, with κ^2 = (1 + (P K0 m0)/D0) / Z
-    kappa2 = (1.0 + (P*K0*m0)/D0) / Z
+    # Step 2: (L1 + κ^2) σ = -(P/Z) q, with κ^2 = (1 + (P K0 m0)/D0) / Z
+    kappa2 = (-1.0 + (P*K0*m0)/D0) / Z
     if kappa2 <= 0:
         raise RuntimeError(f"κ^2 must be positive; got {kappa2}")
     kappa = float(np.sqrt(kappa2))
 
     # σ with zero Dirichlet at R0 for u_reg, and for u_hom = r
-    sig_part, _, sigp_part_R0 = _solve_sigma_modified_dirichlet(kappa, (P/Z)*u_reg, r, R0, sR0_target=0.0)
-    sig_hom,  _, sigp_hom_R0  = _solve_sigma_modified_dirichlet(kappa, (P/Z)*r,     r, R0, sR0_target=0.0)
+    sigma31, sig31p_R0 = _solve_sigma_dirichlet(kappa, -(P/Z)*q_reg, r, R0, sR0_target=-lot.sR0_target)
+    #sig_hom,  _, sigp_hom_R0  = _solve_sigma_modified_dirichlet(kappa, (P/Z)*r,     r, R0, sR0_target=0.0)
 
     # Add Dirichlet lift σ_D to hit σ(R0)=sR0_target
-    phiR0   = float(I(1, kappa*R0))
-    sigp_lift_R0 = (kappa * float(Ip(1, kappa*R0))) * (lot.sR0_target / phiR0)
+    #phiR0   = float(I(1, kappa*R0))
+    #sigp_lift_R0 = (kappa * float(Ip(1, kappa*R0))) * (lot.sR0_target / phiR0)
 
     # choose A from (ms31_c): m31' = u' + (K0 m0 / D0) σ' ⇒ m31'(R0)+bracket_c=0
-    up_reg_R0 = float(_deriv_central(u_reg, r)[-1])
-    coeff_A = 1.0 + (K0*m0/D0) * sigp_hom_R0
-    rhs     = - ( up_reg_R0 + (K0*m0/D0)*( sigp_part_R0 + sigp_lift_R0 ) + lot.bracket_c )
-    A = rhs / coeff_A
+    #up_reg_R0 = float(_deriv_central(q_reg, r)[-1])
+    #coeff_A = 1.0 + (K0*m0/D0) * sigp_hom_R0
+    #rhs     = - ( up_reg_R0 + (K0*m0/D0)*( sigp_part_R0 + sigp_lift_R0 ) + lot.bracket_c )
+    #A = rhs / coeff_A
 
     # Build fields
-    u_tot   = u_reg + A * r
-    sigma31 = sig_part + A * sig_hom + (lot.sR0_target/phiR0) * I(1, kappa*r)
-    m31     = u_tot + (K0*m0/D0) * sigma31
+    #u_tot   = q_reg + A * r
+    #sigma31 = sig_part # + A * sig_hom + (lot.sR0_target/phiR0) * I(1, kappa*r)
+    #m31     = u_tot + (K0*m0/D0) * sigma31
 
     # Compatibility residual (ms31_e)
-    s31p_R0 = float(_deriv_central(sigma31, r)[-1])
+    #s31p_R0 = float(_deriv_central(sigma31, r)[-1])
    
-    res = K2*float(F.s11p(R0)) + K0*( s31p_R0 + lot.bracket_s)
+    res = K2*float(F.s11p(R0)) + K0*( sig31p_R0 + lot.bracket_s)
 
     return dict(
         residual_bc=float(abs(res)),
         signed_residual_bc=float(res),
-        A=float(A),
+        #A=float(A),
         sigma_R0=float(sigma31[-1]),
-        sigma_p_R0=float(s31p_R0),
+        sigma_p_R0=float(sig31p_R0),
     )

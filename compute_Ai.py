@@ -249,23 +249,61 @@ def K2_of_eA(F, SO, eA_values: Iterable[float], m_inf: float = 10.0) -> Tuple[np
 
     return eA_values, np.array(K2_list)
 
-def plot_K2_of_eA(F, SO, eA_values: Iterable[float], m_inf: float = 10.0,
+
+
+def plot_K2_of_eA(F, SO, eA_values, m_inf: float = 10.0,
                   *, save: bool = False, filename: str = "K2_of_eA.png"):
     """
     Plot K2 as a function of e_A for the vdW diffusion.
+    Solid line, dashed y=0 line, and a red point labeled e_A^* at K2=0 (or closest).
+    No background grid.
     """
-
     eA, K2 = K2_of_eA(F, SO, eA_values, m_inf=m_inf)
+
+    eA = np.asarray(eA, dtype=float)
+    K2 = np.asarray(K2, dtype=float)
+
+    # --- find e_A^* where K2(e_A) = 0 ---
+    eA_star, K2_star = None, None
+    zero_idx = np.where(np.isclose(K2, 0.0, atol=1e-12, rtol=0.0))[0]
+    if zero_idx.size > 0:
+        i = int(zero_idx[0])
+        eA_star, K2_star = float(eA[i]), float(K2[i])
+    else:
+        s = np.sign(K2)
+        change = np.where(s[:-1] * s[1:] < 0)[0]
+        if change.size > 0:
+            i = int(change[0])
+            eA_star = float(np.interp(0.0, [K2[i], K2[i+1]], [eA[i], eA[i+1]]))
+            K2_star = 0.0
+        else:
+            i = int(np.argmin(np.abs(K2)))
+            eA_star, K2_star = float(eA[i]), float(K2[i])
+
     plt.figure()
-    plt.plot(eA, K2, marker='o')
+    plt.plot(eA, K2, linestyle='-', linewidth=2)
+    plt.axhline(0.0, linestyle='--', linewidth=1, alpha=0.7)
+
+    if eA_star is not None:
+        plt.scatter([eA_star], [K2_star], color='red', zorder=5)
+        plt.annotate(r"$e_A^*$",
+                     xy=(eA_star, K2_star),
+                     xytext=(8, 10),
+                     textcoords="offset points",
+                     color='red')
+
     plt.xlabel(r"$e_A$")
-    plt.ylabel(r"$K_2(e_A)$")
-    plt.title(r"$K_2$ vs $e_A$ (vdW diffusion)")
-    plt.grid(True, alpha=0.3)
+    plt.ylabel(r"$K_2$")
+    #plt.title(r"$K_2$ vs $e_A$ (vdW diffusion)")
+
+    # remove background grid
+    plt.grid(False)
+
     if save:
         plt.savefig(filename, dpi=180, bbox_inches='tight')
     else:
         plt.show()
+
     return eA, K2
 
 

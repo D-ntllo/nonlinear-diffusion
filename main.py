@@ -11,8 +11,9 @@ if __name__ == "__main__":
     F = build_first_order(P=P, Z=Z, gamma=gamma)
     SO = compute_second_order(F)
 
-    print(check_second_order_pde_discrete(F,SO)["loss"])
+    #print(check_second_order_pde_discrete(F,SO)["loss"])
 
+    print("K0 ", F.Khat0)
 
     # diffusion model and K
     D, Dp, Dpp = D_vdW(e_a=0.0, m_inf=10.0)  # or your own D(m)
@@ -22,6 +23,11 @@ if __name__ == "__main__":
     k2 = K2_from_Ai(As, D(F.m0),Dp(F.m0), Dpp(F.m0))
     k2 = K2_from_Ai(As, 1,0,0)
     print(check_k2_consistent(F, SO, D, Dp, Dpp, k2))
+
+
+    plot_K2_of_eA(F, SO, np.linspace(0.5, 0.7, 100),
+              save=True)
+
     #D0 = D_of_m(F.m0)                            # D(m0)
 
     # compute arrays and plot
