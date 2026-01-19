@@ -4,10 +4,12 @@ import math
 from typing import Dict, Any, Tuple
 from dataclasses import dataclass
 
+import matplotlib.pyplot as plt
+
 # Reuse your solvers
 from second_order import _Ln_inverse_neumann, _cumtrapz_from_zero
-from scipy.special import iv as I, kv as K, ivp as Ip
 from scipy.special import j1, y1, jvp, yvp
+from check_k2_new import _solve_sigma_numerical
 
 # -------------------- utils --------------------
 
@@ -297,6 +299,8 @@ def check_k2_consistent(F, SO, D, Dp, Dpp, K2: float) -> Dict[str, Any]:
     lot = make_forcings_ms31(F, SO, D, Dp, Dpp, K2)
     r = lot.r
 
+    r_step = r[1:]-r[:-1]
+
     # Step 1: u = L1^{-1} q31 (regular; we will add A r from BC)
     q_reg = _Ln_inverse_neumann(1, lambda rr: np.interp(rr, r, lot.q31), r, R0, neuman_bc= -lot.bracket_c+K0*m0/D0*lot.bracket_s)
 
@@ -308,31 +312,25 @@ def check_k2_consistent(F, SO, D, Dp, Dpp, K2: float) -> Dict[str, Any]:
 
     # σ with zero Dirichlet at R0 for u_reg, and for u_hom = r
     sigma31, sig31p_R0 = _solve_sigma_dirichlet(kappa, -(P/Z)*q_reg, r, R0, sR0_target=-lot.sR0_target)
-    #sig_hom,  _, sigp_hom_R0  = _solve_sigma_modified_dirichlet(kappa, (P/Z)*r,     r, R0, sR0_target=0.0)
+    sigma31n, sig31p_R0n = _solve_sigma_numerical(kappa, R0, f=-(P/Z)*q_reg, r=r, target=-lot.sR0_target)
+    
+    target = np.zeros_like(sigma31n)
+    target[-1] = -lot.bracket_s 
 
-    # Add Dirichlet lift σ_D to hit σ(R0)=sR0_target
-    #phiR0   = float(I(1, kappa*R0))
-    #sigp_lift_R0 = (kappa * float(Ip(1, kappa*R0))) * (lot.sR0_target / phiR0)
+    plt.plot(r, sigma31n)
+    plt.draw(r,target)
+    plt.show()
 
-    # choose A from (ms31_c): m31' = u' + (K0 m0 / D0) σ' ⇒ m31'(R0)+bracket_c=0
-    #up_reg_R0 = float(_deriv_central(q_reg, r)[-1])
-    #coeff_A = 1.0 + (K0*m0/D0) * sigp_hom_R0
-    #rhs     = - ( up_reg_R0 + (K0*m0/D0)*( sigp_part_R0 + sigp_lift_R0 ) + lot.bracket_c )
-    #A = rhs / coeff_A
 
-    # Build fields
-    #u_tot   = q_reg + A * r
-    #sigma31 = sig_part # + A * sig_hom + (lot.sR0_target/phiR0) * I(1, kappa*r)
-    #m31     = u_tot + (K0*m0/D0) * sigma31
 
-    # Compatibility residual (ms31_e)
-    #s31p_R0 = float(_deriv_central(sigma31, r)[-1])
-   
-    res = K2*float(F.s11p(R0)) + K0*( sig31p_R0 + lot.bracket_s)
+    res = sig31p_R0+lot.bracket_s #K2*float(F.s11p(R0)) + K0*(sig31p_R0 + lot.bracket_s)
+    res_n = sig31p_R0n+lot.bracket_s 
 
     return dict(
         residual_bc=float(abs(res)),
+        residual_numerical = float(res_n),
         signed_residual_bc=float(res),
+        regularised_loss = float(res)/np.dot(sigma31[:-1]**2, r_step),
         #A=float(A),
         sigma_R0=float(sigma31[-1]),
         sigma_p_R0=float(sig31p_R0),
