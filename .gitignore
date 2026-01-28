@@ -6,3 +6,4 @@ __pycache__/
 **/__pycache__/
 *.pyc
 k2_2d.py # or add a pattern
+main_revised.pdf

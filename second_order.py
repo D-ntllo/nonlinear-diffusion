@@ -26,9 +26,6 @@ class SecondOrderAll:
     rho22B: float
 
 
-
-
-
 def make_forcings_A_B_func(F):
     """
     Return callables qA0(r), qA2(r), qB0(r), qB2(r) built from the analytic

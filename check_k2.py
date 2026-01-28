@@ -268,16 +268,23 @@ def make_forcings_ms31(F, SO, D, Dp, Dpp, K2: float) -> K2LoT:
     )
 )
 
-    # g(r) for the K2 term
-    g_r = -(s11 / (rr**2)) - (s11p / rr) + s11pp
+    # g(r) for the K2 term: L1 s11 = s11'' + (1/r)s11' - (1/r^2)s11
+    g_r = s11pp + (s11p / rr) - (s11 / (rr**2))
 
     # q31: L1 u = q31. u = m31-K0m0/D0*s31
     q31 = (K2 * m0 / D0) * g_r - f / D0
 
-    # Dirichlet target for σ31 and bracket for m31' BC
-    sR0_target = (rho20 + 0.5*rho22) * float(F.s11p(R0))
-    bracket_c  = (rho20 + 0.5*rho22) * float(F.m11pp(R0)) + (rho22 / (R0**2)) * float(F.m11(R0))
-    bracket_s  = (rho20 + 0.5*rho22) * float(F.s11pp(R0)) + (rho22 / (R0**2)) * float(F.s11(R0)) + K2/K0 * F.s11p(R0)
+    # Dirichlet target for σ31 and bracket for m31' BC.
+    # Use the consistently scaled (by 1/D0) first-order fields already computed above.
+    s11_R0   = float(s11[-1])
+    s11p_R0  = float(s11p[-1])
+    s11pp_R0 = float(s11pp[-1])
+    m11_R0   = float(m11[-1])
+    m11pp_R0 = float(m11pp[-1])
+
+    sR0_target = (rho20 + 0.5*rho22) * s11p_R0
+    bracket_c  = (rho20 + 0.5*rho22) * m11pp_R0 + (rho22 / (R0**2)) * m11_R0
+    bracket_s  = (rho20 + 0.5*rho22) * s11pp_R0 + (rho22 / (R0**2)) * s11_R0 + (K2 / K0) * s11p_R0
 
     return K2LoT(r=r, q31=q31, sR0_target=sR0_target, bracket_c=bracket_c, bracket_s= bracket_s)
 
@@ -317,9 +324,9 @@ def check_k2_consistent(F, SO, D, Dp, Dpp, K2: float) -> Dict[str, Any]:
     target = np.zeros_like(sigma31n)
     target[-1] = -lot.bracket_s 
 
-    plt.plot(r, sigma31n)
-    plt.draw(r,target)
-    plt.show()
+    #plt.plot(r, sigma31n)
+    #plt.draw(r,target)
+    #plt.show()
 
 
 
