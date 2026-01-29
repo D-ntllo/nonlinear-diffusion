@@ -46,7 +46,9 @@ def solve_Khat0(
     Kmin = (1.0 / (P * m0)) * (1 + 1e-12)  # tiny offset above threshold
 
     def alpha_of(Khat0: float) -> float:
-        return (R0/np.sqrt(Z)) * np.sqrt(max(P*m0*Khat0 - 1.0, 0.0))
+        if min(P, Z, R0, m0) <= 0:
+            raise ValueError("Pm0Khat0-1 must be positive")
+        return (R0/np.sqrt(Z)) * np.sqrt(P*m0*Khat0 - 1.0)
 
     def G(Khat0: float) -> float:
         if Khat0 <= Kmin:

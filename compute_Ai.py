@@ -149,7 +149,7 @@ def compute_Ais(F: FirstOrder, SO: SecondOrderAll) -> Dict[str, float]:
     U, Up  = F.U, F.Up
 
     # --- A0
-    # A0 = (Z R0)/Khat0^2 - P m0 * ∫ r ( m11(r) + r/Khat0 ) U(r) dr
+    # A0 = -(Z R0)/Khat0^2 + P m0 * ∫ r ( m11(r) + r/Khat0 ) U(r) dr
     IU_kernel = np.trapz(r*(F.s11(r)) * U(r), r )
     A0 = -(F.Z * R0) / (F.Khat0**2) + P * F.m0 * IU_kernel
 

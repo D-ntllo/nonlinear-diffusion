@@ -218,7 +218,7 @@ def compute_second_order(
             out[n] = (sigma, m); sR0s[n] = sR0
         return out[0][0], out[2][0], out[0][1], out[2][1], sR0s[0], sR0s[2]
 
-    # A piece
+    # A piec.  e
     s0A, s2A, m0A, m2A, sR0_0A, sR0_2A = solve_piece(Qf["qA0"], Qf["qA2"])
     # B piece
     s0B, s2B, m0B, m2B, sR0_0B, sR0_2B = solve_piece(Qf["qB0"], Qf["qB2"])
@@ -237,8 +237,24 @@ def compute_second_order(
 
         return sigma_sol+sA, m_sol+A, sR0_sol+sA
     
-    s0A, m0A, sR0_0A = _update_solns_by_A(s0A, m0A, sR0_0A)
-    s0B, m0B, sR0_0B = _update_solns_by_A(s0B, m0B, sR0_0B)
+    def _update_solns_by_A_new(sigma_sol: np.ndarray, m_sol: np.ndarray, sR0_sol: float) -> Tuple[np.ndarray, np.ndarray, float]:
+        
+        int_m = _cumtrapz_from_zero(m_sol*r,r)[-1]
+
+        rho20Atilde= - sR0_sol / (2.0*np.pi + gamma/R0**2)
+
+        Cm_num = 4*np.pi*m0*R0*rho20Atilde + 2*np.pi*int_m
+
+        Cm_den = 4*np.pi*m0*R0*(-P*1/(2.0*np.pi + gamma/R0**2)) + 2*np.pi*R0**2
+
+        Cm = - Cm_num / Cm_den
+
+        Cs = P*Cm
+
+        return sigma_sol+Cs, m_sol+Cm, sR0_sol+Cs
+    
+    s0A, m0A, sR0_0A = _update_solns_by_A_new(s0A, m0A, sR0_0A)
+    s0B, m0B, sR0_0B = _update_solns_by_A_new(s0B, m0B, sR0_0B)
 
     # Map σ(R0) -> ρ via (149).4
     rho20A = - sR0_0A / (2.0*np.pi + gamma/R0**2) if 0 in modes else 0.0
