@@ -142,9 +142,8 @@ def _solve_sigma_bessel(n: int, kappa: float, f: np.ndarray, r: np.ndarray, R0: 
     Solve (L_n + kappa^2) σ = f on (0,R0) with σ'(R0)=0, regular at r=0.
 
     Green's representation for '+' sign (ordinary Bessels):
-        σ(r) = (π/2) [ ψ̂(r) ∫_0^r s J_n(κ s) f(s) ds + J_n(κ r) ∫_r^{R0} s ψ̂(κ s) f(s) ds ],
-    where ψ̂(r) = Y_n(κ r) + c J_n(κ r) and c = -Y_n'(κ R0)/J_n'(κ R0).
-    This avoids integrating Y_n near 0 and enforces σ'(R0)=0 by construction.
+
+    This constant A enforces σ'(R0)=0 by construction.
     """
     rr = np.asarray(r, dtype=float)
     fv = np.asarray(f, dtype=float)
@@ -164,19 +163,34 @@ def _solve_sigma_bessel(n: int, kappa: float, f: np.ndarray, r: np.ndarray, R0: 
     denom = Jnp(kr0)
     if np.isclose(denom, 0.0):
         raise ZeroDivisionError("Neumann resonance: J_n'(kappa*R0) ≈ 0; adjust kappa or R0.")
-    c = -Ynp(kr0) / denom
+    
 
-    phi = Jn(kr)                  # left-regular
-    psi = Yn(kr) + c * Jn(kr)     # right-Neumann
+    fracnum = (Y(n-1,kappa*R0)+Y(n+1, kappa*R0))* _cumtrapz_from_zero(rr*Jn(kr)*fv,rr)[-1]
+    fracden = J(n-1, kappa*R0) - J(n+1, kappa*R0)
+    frac = fracnum/ fracden
 
-    # prefix and suffix weighted integrals
-    I2 = _cumtrapz_from_zero(rr * phi * fv, rr)   # ∫_0^r s J_n(κ s) f(s) ds
-    B  = _cumtrapz_to_R0(rr * psi * fv, rr)       # ∫_r^{R0} s ψ̂(κ s) f(s) ds
 
-    sigma = (np.pi/2.0) * (psi * I2 + phi * B)
+    integral = _cumtrapz_from_zero(rr*Yn(kr)*fv,rr)[-1]
+    A = 1/2*np.pi*(frac + integral)
 
-    # σ(R0): since B(R0)=0, I2(R0)=∫_0^{R0} s J_n(κ s) f(s) ds
-    sR0 = float((np.pi/2.0) * (Yn(kr0) + c * Jn(kr0)) * I2[-1])
+
+    sigma = -np.pi/2*Jn(kr)*_cumtrapz_from_zero(rr*Yn(kr)*fv,rr) + np.pi/2*Yn(kr)*_cumtrapz_from_zero(rr*Jn(kr)*fv,rr)+A*Jn(kr)
+
+    sR0 = 1/2*np.pi*Yn(kappa*R0) * _cumtrapz_from_zero(rr*Jn(kr)*fv,rr)[-1] + Jn(kappa*R0)*(A - 1/2*np.pi*_cumtrapz_from_zero(rr*Yn(kr)*fv,rr)[-1])
+
+    # c = -Ynp(kr0) / denom
+
+    # phi = Jn(kr)                  # left-regular
+    # psi = Yn(kr) + c * Jn(kr)     # right-Neumann
+
+    # # prefix and suffix weighted integrals
+    # I2 = _cumtrapz_from_zero(rr * phi * fv, rr)   # ∫_0^r s J_n(κ s) f(s) ds
+    # B  = _cumtrapz_to_R0(rr * psi * fv, rr)       # ∫_r^{R0} s ψ̂(κ s) f(s) ds
+
+    # sigma = (np.pi/2.0) * (psi * I2 + phi * B)
+
+    # # σ(R0): since B(R0)=0, I2(R0)=∫_0^{R0} s J_n(κ s) f(s) ds
+    # sR0 = float((np.pi/2.0) * (Yn(kr0) + c * Jn(kr0)) * I2[-1])
 
     return sigma, sR0
 
