@@ -8,7 +8,7 @@ from second_order import *
 
 def _nested_quads(R0: float,
                   U: Callable[[np.ndarray], np.ndarray],
-                  Up: Callable[[np.ndarray], np.ndarray],  # kept for API compatibility (unused)
+                  Up: Callable[[np.ndarray], np.ndarray],  #
                   f: np.ndarray,                           # f ≡ f1(r) sampled on grid r
                   r: np.ndarray,
                   P: float) -> float:
@@ -154,7 +154,7 @@ def compute_Ais(F: FirstOrder, SO: SecondOrderAll) -> Dict[str, float]:
     A0 = -(F.Z * R0) / (F.Khat0**2) + P * F.m0 * IU_kernel
 
     # these are still needed for Ã3/Ã4 boundary pieces
-    IU_r2 = np.trapz( (r**2) * U(r), r )
+    IU_r2 = np.trapz( (r**2) * U(r), r)
 
     fis = _compute_fi_arrays(F, SO)
 

@@ -25,20 +25,24 @@ if __name__ == "__main__":
 
     #print("K0 ", F.Khat0)
 
-    plt.plot(SO.A.r, SO.A.m2)
-    plt.show()
-    print("Bdry loss:  ")
-    # diffusion model and K
-    D, Dp, Dpp = D_vdW(e_a=0.58, m_inf=10.0)  # or your own D(m)
+    #plt.plot(SO.A.r, SO.A.m2)
+    #plt.show()
+
+    DD, Dp, Dpp = D_vdW(e_a=0.58, m_inf=10.0)  
     As = compute_Ais(F,SO)
     print(As)
 
-    k2_vdw = K2_from_Ai(As, D(F.m0), Dp(F.m0), Dpp(F.m0))
+  
+    res = compute_velocity_scaling(F, SO, DD, Dp, Vs=np.linspace(1, 1e5, 10),)
+    plot_velocity_scaling(res, save=True, show= True)
+
+
+    k2_vdw = K2_from_Ai(As, DD(F.m0), Dp(F.m0), Dpp(F.m0))
     k2_const = K2_from_Ai(As, 1, 0, 0)
 
 
-    k2_opt = optimize_k2_boundary_loss(F, SO,  D,  Dp,  Dpp, k2_guess=0.0)
-    k2_formula = K2_from_Ai(compute_Ais(F, SO), D(F.m0), Dp(F.m0), Dpp(F.m0))
+    k2_opt = optimize_k2_boundary_loss(F, SO,  DD,  Dp,  Dpp, k2_guess=0.0)
+    k2_formula = K2_from_Ai(compute_Ais(F, SO), DD(F.m0), Dp(F.m0), Dpp(F.m0))
     print("k2_formula", k2_formula)
 
     
