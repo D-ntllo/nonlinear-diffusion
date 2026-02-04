@@ -18,10 +18,17 @@ if __name__ == "__main__":
     gamma_exp = 0.0025
 
     P,Z,gamma = 0.016, 0.16, 0.00001
+
+
     F = build_first_order(P=P_exp, Z=Z_exp, gamma=gamma_exp)
     SO = compute_second_order(F)
 
-    print(check_second_order_pde_discrete(F,SO)["loss"])
+    print(check_second_order_pde_discrete(F,SO))
+
+
+    As = compute_Ais(F,SO)
+    print(As)
+
 
     #print("K0 ", F.Khat0)
 
@@ -29,16 +36,16 @@ if __name__ == "__main__":
     #plt.show()
 
     DD, Dp, Dpp = D_vdW(e_a=0.58, m_inf=10.0)  
-    As = compute_Ais(F,SO)
-    print(As)
-
+   
   
-    res = compute_velocity_scaling(F, SO, DD, Dp, Vs=np.linspace(1, 1e5, 10),)
-    plot_velocity_scaling(res, save=True, show= True)
+    #res = compute_velocity_scaling(F, SO, DD, Dp, Vs=np.logspace(1, 1e5, 10),)
+    #plot_velocity_scaling(res, save=True, prefix="figs/velocity_scaling")
+
 
 
     k2_vdw = K2_from_Ai(As, DD(F.m0), Dp(F.m0), Dpp(F.m0))
     k2_const = K2_from_Ai(As, 1, 0, 0)
+    print("k2_const:", k2_const)
 
 
     k2_opt = optimize_k2_boundary_loss(F, SO,  DD,  Dp,  Dpp, k2_guess=0.0)

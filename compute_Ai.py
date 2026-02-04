@@ -89,56 +89,89 @@ def _compute_fi_arrays(F: FirstOrder, SO: SecondOrderAll) -> Dict[str, np.ndarra
 
     K0h = F.Khat0  # K̂0
 
-    # --- f1
+    # --- f1 (unchanged)
     f1 = (1.0 / (8.0 * r**2)) * m11 * (
-        - m11**2
-        + 6.0 * (r**2) * (m11p**2)
+        -m11**2
+        + 6.0 * r**2 * (m11p**2)
         + 3.0 * r * m11 * (m11p + r * m11pp)
-        )
-
-    # --- f2
-    f2 = (1.0 / (2.0 * r**2)) * (
-    r * (
-        2.0 * r * m11p * (2.0 * m20B_p + m22B_p)
-        + 2.0 * m20B * (m11p + r * m11pp)
-    )
-    + r * m22B * (m11p + r * m11pp)
-    + m11 * (-2.0 * m20B - m22B)
-    + m11 * r * (2.0 * m20B_p + m22B_p + 2.0 * r * m20B_pp + r * m22B_pp)
     )
 
-    # --- f3
-    f3 = (1.0 / (2.0 * r**2)) * (
-    r * (
-        2.0 * m22B
-        + m22A * m11p
-        + 4.0 * r * m11p * m20A_p
-        + 2.0 * r * m20B_p
-        + 2.0 * r * m11p * m22A_p
-        + r * m22B_p
-        - 2.0 * K0h * r * m11p * s20B_p
-        - K0h * r * m11p * s22B_p
-        + r * m22A * m11pp
-        + 2.0 * m20A * (m11p + r * m11pp)
+    # --- f2 (UPDATED)
+    f2 = (1.0 / (8.0 * r**2)) * (
+        -8.0 * m11 * m20B
+        -4.0 * m11 * m22B
+        +8.0 * r * m20B * m11p
+        +4.0 * r * m22B * m11p
+        +8.0 * r * m11 * m20B_p
+        +16.0 * r**2 * m11p * m20B_p
+        +4.0 * r * m11 * m22B_p
+        +8.0 * r**2 * m11p * m22B_p
+        +8.0 * r**2 * m20B * m11pp
+        +4.0 * r**2 * m22B * m11pp
+        +8.0 * r**2 * m11 * m20B_pp
+        +4.0 * r**2 * m11 * m22B_pp
+    )
+
+    # --- f3 (UPDATED)
+    f3 = (1.0 / (8.0 * r**2)) * (
+        -8.0 * m11 * m20A
+        -4.0 * m11 * m22A
+        +8.0 * r * m20A * m11p
+        +4.0 * r * m22A * m11p
+        +8.0 * r * m11 * m20A_p
+        +16.0 * r**2 * m11p * m20A_p
+        +4.0 * r * m11 * m22A_p
+        +8.0 * r**2 * m11p * m22A_p
+        +8.0 * r**2 * m20A * m11pp
+        +4.0 * r**2 * m22A * m11pp
+        +8.0 * r**2 * m11 * m20A_pp
+        +4.0 * r**2 * m11 * m22A_pp
+        +8.0 * r**2 * m20B_p
+        +4.0 * r**2 * m22B_p
+        +8.0 * r * m22B
+        +K0h * (
+            8.0 * m20B * s11
+            -4.0 * m22B * s11
+            +8.0 * m11 * s22B
+            -8.0 * r * m20B * s11p
+            -4.0 * r * m22B * s11p
+            -8.0 * r**2 * m20B_p * s11p
+            -4.0 * r**2 * m22B_p * s11p
+            -8.0 * r * m11 * s20B_p
+            -4.0 * r * m11 * s22B_p
+            -4.0 * r**2 * m11p * s22B_p
+            -8.0 * r**2 * m20B * s11pp
+            -4.0 * r**2 * m22B * s11pp
+            -8.0 * r**2 * m11p * s20B_p
+            -8.0 * r**2 * m11 * s20B_pp
+            -4.0 * r**2 * m11 * s22B_pp
         )
-    - m11 * (
-        2.0 * m20A + m22A - 2.0 * K0h * s22B
-        - 2.0 * r * m20A_p - r * m22A_p
-        + 2.0 * K0h * r * s20B_p + K0h * r * s22B_p
-        - 2.0 * r**2 * m20A_pp - r**2 * m22A_pp
-        + 2.0 * K0h * r**2 * s20B_pp + K0h * r**2 * s22B_pp
-            )
     )
 
     # --- f4
-    f4 = (1.0 / (2.0 * r**2)) * (
-    2.0 * r * m22A
-    + r**2 * (2.0 * m20A_p + m22A_p - K0h * m11p * (2.0 * s20A_p + s22A_p))
-    + K0h * m11 * (
-        2.0 * s22A
-        - r * (2.0 * s20A_p + s22A_p + 2.0 * r * s20A_pp + r * s22A_pp)
-            )
+    f4 = (1.0 / (8.0 * r**2)) * (
+        8.0 * r**2 * m20A_p
+        +4.0 * r**2 * m22A_p
+        +8.0 * r * m22A
+        +K0h * (
+            8.0 * m20A * s11
+            -4.0 * m22A * s11
+            +8.0 * m11 * s22A
+            -8.0 * r * m20A * s11p
+            -4.0 * r * m22A * s11p
+            -8.0 * r**2 * m20A_p * s11p
+            -4.0 * r**2 * m22A_p * s11p
+            -8.0 * r * m11 * s20A_p
+            -4.0 * r * m11 * s22A_p
+            -4.0 * r**2 * m11p * s22A_p
+            -8.0 * r**2 * m20A * s11pp
+            -4.0 * r**2 * m22A * s11pp
+            -8.0 * r**2 * m11p * s20A_p
+            -8.0 * r**2 * m11 * s20A_pp
+            -4.0 * r**2 * m11 * s22A_pp
+        )
     )
+
 
     return dict(f1=f1, f2=f2, f3=f3, f4=f4)
 
@@ -172,7 +205,7 @@ def compute_Ais(F: FirstOrder, SO: SecondOrderAll) -> Dict[str, float]:
 
     A3t -= IU_r2*P*(
         (SO.rho20B+SO.rho22B/2)*(F.Khat0*F.m0*F.s11pp_R0-F.m11pp_R0)
-        -SO.rho22B*F.m11_R0/R0**2
+        +SO.rho22B*F.m11_R0/R0**2
     )
 
     A3t += F.Z*R0*(SO.rho20B+SO.rho22B/2)*(F.s11pp_R0- F.alpha * J1p(F.alpha) / (R0*F.Khat0 * J1(F.alpha)))
@@ -183,7 +216,7 @@ def compute_Ais(F: FirstOrder, SO: SecondOrderAll) -> Dict[str, float]:
 
     A4t -= IU_r2*P*(
         (SO.rho20A+SO.rho22A/2)*(F.Khat0*F.m0*F.s11pp_R0-F.m11pp_R0)
-        -SO.rho22A*F.m11_R0/R0**2
+        +SO.rho22A*F.m11_R0/R0**2
     )
 
     A4t += F.Z*R0*(SO.rho20A+SO.rho22A/2)*(F.s11pp_R0- F.alpha * J1p(F.alpha) / (R0*F.Khat0 * J1(F.alpha)))

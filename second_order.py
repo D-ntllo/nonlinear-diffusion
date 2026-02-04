@@ -165,32 +165,33 @@ def _solve_sigma_bessel(n: int, kappa: float, f: np.ndarray, r: np.ndarray, R0: 
         raise ZeroDivisionError("Neumann resonance: J_n'(kappa*R0) ≈ 0; adjust kappa or R0.")
     
 
-    fracnum = (Y(n-1,kappa*R0)+Y(n+1, kappa*R0))* _cumtrapz_from_zero(rr*Jn(kr)*fv,rr)[-1]
+    integrandJ = rr * Jn(kappa*rr) * fv
+    integrandY = rr * Yn(kappa*rr) * fv
+    if rr[0] == 0.0:
+        integrandY[0] = 0.0
+
+    IJ = _cumtrapz_from_zero(integrandJ,rr)
+    IY = _cumtrapz_from_zero(integrandY,rr)
+
+    fracnum = (-Y(n-1,kappa*R0)+Y(n+1, kappa*R0))* IJ[-1]
     fracden = J(n-1, kappa*R0) - J(n+1, kappa*R0)
     frac = fracnum/ fracden
 
 
-    integral = _cumtrapz_from_zero(rr*Yn(kr)*fv,rr)[-1]
-    A = 1/2*np.pi*(frac + integral)
+    A = 1/2*np.pi*(frac + IY[-1])
 
+    Yv = Yn(kr)
+    if rr[0] == 0.0:
+        Yv = Yv.copy()
+        Yv[0] = 0.0
 
-    sigma = -np.pi/2*Jn(kr)*_cumtrapz_from_zero(rr*Yn(kr)*fv,rr) + np.pi/2*Yn(kr)*_cumtrapz_from_zero(rr*Jn(kr)*fv,rr)+A*Jn(kr)
+    sigma = -np.pi/2*Jn(kr)*IY + np.pi/2*Yv*IJ + A*Jn(kr)
 
-    sR0 = 1/2*np.pi*Yn(kappa*R0) * _cumtrapz_from_zero(rr*Jn(kr)*fv,rr)[-1] + Jn(kappa*R0)*(A - 1/2*np.pi*_cumtrapz_from_zero(rr*Yn(kr)*fv,rr)[-1])
+    # correct origin value by the limiting formula σ(0)=A*J_n(0)
+    if rr[0] == 0.0:
+        sigma[0] = A * Jn(0.0)   
 
-    # c = -Ynp(kr0) / denom
-
-    # phi = Jn(kr)                  # left-regular
-    # psi = Yn(kr) + c * Jn(kr)     # right-Neumann
-
-    # # prefix and suffix weighted integrals
-    # I2 = _cumtrapz_from_zero(rr * phi * fv, rr)   # ∫_0^r s J_n(κ s) f(s) ds
-    # B  = _cumtrapz_to_R0(rr * psi * fv, rr)       # ∫_r^{R0} s ψ̂(κ s) f(s) ds
-
-    # sigma = (np.pi/2.0) * (psi * I2 + phi * B)
-
-    # # σ(R0): since B(R0)=0, I2(R0)=∫_0^{R0} s J_n(κ s) f(s) ds
-    # sR0 = float((np.pi/2.0) * (Yn(kr0) + c * Jn(kr0)) * I2[-1])
+    sR0 = 1/2*np.pi*Yn(kappa*R0) * IJ[-1] + Jn(kappa*R0)*(A - 1/2*np.pi*IY[-1])
 
     return sigma, sR0
 
@@ -271,10 +272,10 @@ def compute_second_order(
     s0B, m0B, sR0_0B = _update_solns_by_A_new(s0B, m0B, sR0_0B)
 
     # Map σ(R0) -> ρ via (149).4
-    rho20A = - sR0_0A / (2.0*np.pi + gamma/R0**2) if 0 in modes else 0.0
-    rho22A =   (R0**2)*sR0_2A / (3.0*gamma)       if 2 in modes else 0.0
-    rho20B = - sR0_0B / (2.0*np.pi + gamma/R0**2) if 0 in modes else 0.0
-    rho22B =   (R0**2)*sR0_2B / (3.0*gamma)       if 2 in modes else 0.0
+    rho20A = sR0_0A / (-2.0*np.pi*R0 + gamma/R0**2) if 0 in modes else 0.0
+    rho22A =   -(R0**2)*sR0_2A / (3.0*gamma)       if 2 in modes else 0.0
+    rho20B = sR0_0B / (-2.0*np.pi + gamma/R0**2) if 0 in modes else 0.0
+    rho22B =   -(R0**2)*sR0_2B / (3.0*gamma)       if 2 in modes else 0.0
 
     A_piece = SecondOrderPiece(r=r, m0=m0A, m2=m2A, s0=s0A, s2=s2A)
     B_piece = SecondOrderPiece(r=r, m0=m0B, m2=m2B, s0=s0B, s2=s2B)
