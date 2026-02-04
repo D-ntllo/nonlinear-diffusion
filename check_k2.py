@@ -251,8 +251,9 @@ def make_forcings_ms31(F, SO, D, Dp, Dpp, K2: float) -> K2LoT:
         8.0 * K0 * m20 * s11
         - 4.0 * K0 * m22 * s11
         + 8.0 * K0 * m11 * s22
-        + 8.0 * r**3 * m20p
-        + 4.0 * r**3 * m22p
+        + 8.0 * r**2 * m20p
+        + 4.0 * r**2 * m22p
+        + 8.0 * r * m22
         - 8.0 * r * K0 * m20 * s11p
         - 4.0 * r * K0 * m22 * s11p
         - 8.0 * r**2 * K0 * m20p * s11p
@@ -283,8 +284,8 @@ def make_forcings_ms31(F, SO, D, Dp, Dpp, K2: float) -> K2LoT:
     m11pp_R0 = float(m11pp[-1])
 
     sR0_target = (rho20 + 0.5*rho22) * s11p_R0
-    bracket_c  = (rho20 + 0.5*rho22) * m11pp_R0 + (rho22 / (R0**2)) * m11_R0
-    bracket_s  = (rho20 + 0.5*rho22) * s11pp_R0 + (rho22 / (R0**2)) * s11_R0 + (K2 / K0) * s11p_R0
+    bracket_c  = (rho20 + 0.5*rho22) * m11pp_R0 - (rho22 / (R0**2)) * m11_R0
+    bracket_s  = (rho20 + 0.5*rho22) * s11pp_R0 - (rho22 / (R0**2)) * s11_R0 + (K2 / K0) * s11p_R0
 
     return K2LoT(r=r, q31=q31, sR0_target=sR0_target, bracket_c=bracket_c, bracket_s= bracket_s)
 
