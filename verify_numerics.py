@@ -45,9 +45,10 @@ def check_second_order_pde_discrete(
     BC checks:
       • center:   n=0 ⇒ σ'(r→0)=0, m'(r→0)=0;  n=2 ⇒ σ(0)=0, m(0)=0
       • outer:    σ'(R0)=0, m'(R0)=0
-      • boundary/shape (149).4:
-           s0(R0) + (2π + γ/R0^2) ρ20S = 0,
-           s2(R0) − (3γ/R0^2) ρ22S = 0.
+      • boundary/shape (uses the same mapping as compute_second_order):
+           A, n=0: s0A(R0) + (2πR0 - γ/R0^2) ρ20A = 0,
+           B, n=0: s0B(R0) + (2π  - γ/R0^2) ρ20B = 0,
+           n=2:    s2S(R0) + (3γ/R0^2) ρ22S = 0.
 
     Returns a dict with total 'loss', per-piece/mode details, and parameters.
     """
@@ -103,13 +104,16 @@ def check_second_order_pde_discrete(
             bc_outer_s = abs(sp[-1])
             bc_outer_m = abs(mp[-1])
 
-            # --- boundary/shape relation (149).4)
+            # --- boundary/shape relation (kept consistent with second_order.py)
             if n == 0:
                 rho20S = getattr(SO, f"rho20{S_name}")
-                bc_shape = abs(s[-1] + (2.0*np.pi + gamma/R0**2) * rho20S)
+                if S_name == "A":
+                    bc_shape = abs(s[-1] + (2.0*np.pi*R0 - gamma/R0**2) * rho20S)
+                else:
+                    bc_shape = abs(s[-1] + (2.0*np.pi - gamma/R0**2) * rho20S)
             else:
                 rho22S = getattr(SO, f"rho22{S_name}")
-                bc_shape = abs(s[-1] - (3.0*gamma/R0**2) * rho22S)
+                bc_shape = abs(s[-1] + (3.0*gamma/R0**2) * rho22S)
 
             # weighted loss for this (S,n)
             loss_Sn = (weights["pde"] * pde_L2_sum
