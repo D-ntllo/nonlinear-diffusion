@@ -24,6 +24,47 @@ def D_vdW(e_a: float = 0.0, m_inf: float = 10.0) -> Tuple[Callable, Callable, Ca
     return D, Dp, Dpp
 
 
+def critical_eA_positive_vdw(
+    m_inf: float = 10.0,
+    *,
+    strict: bool = True,
+    eps: float = 1e-12,
+) -> float:
+    """
+    Critical e_A threshold for vdW diffusion positivity on m in [0, m_inf):
+
+        D(m) = m_inf^2/(m_inf - m)^2 - e_A*m
+
+    The sharp threshold is e_A,crit = 27/(4*m_inf), attained at m = m_inf/3.
+    - strict=True  -> return a slightly smaller value (safe upper bound for D(m) > 0)
+    - strict=False -> return the sharp threshold (D touches 0 at one interior point)
+    """
+    if m_inf <= 0:
+        raise ValueError("m_inf must be positive.")
+    if eps <= 0:
+        raise ValueError("eps must be positive.")
+
+    eA_crit = 27.0 / (4.0 * m_inf)
+    if not strict:
+        return float(eA_crit)
+    return float(max(0.0, eA_crit * (1.0 - eps)))
+
+
+def is_eA_physical_vdw(
+    e_a: float,
+    m_inf: float = 10.0,
+    *,
+    strict: bool = True,
+    eps: float = 1e-12,
+) -> bool:
+    """
+    Check whether a given e_A lies in the physical range where vdW D(m) stays positive.
+    """
+    if strict:
+        return bool(e_a < critical_eA_positive_vdw(m_inf=m_inf, strict=True, eps=eps))
+    return bool(e_a <= critical_eA_positive_vdw(m_inf=m_inf, strict=False, eps=eps))
+
+
 def eA_max_vdW_strictly_positive(m_inf: float = 10.0, *, strict: bool = True, eps: float = 1e-12) -> float:
     """
     Return the sharp upper bound on e_A such that
@@ -38,18 +79,7 @@ def eA_max_vdW_strictly_positive(m_inf: float = 10.0, *, strict: bool = True, ep
     If strict=True, returns a slightly smaller value than the sharp threshold.
     If strict=False, returns the sharp threshold (note: D is not strictly positive at that value).
     """
-    if m_inf <= 0:
-        raise ValueError("m_inf must be positive.")
-    if eps <= 0:
-        raise ValueError("eps must be positive.")
-
-    eA_star = 27.0 / (4.0 * m_inf)  # sharp threshold (supremum)
-
-    if not strict:
-        return eA_star
-
-    # ensure a strict inequality margin
-    return max(0.0, eA_star * (1.0 - eps))
+    return critical_eA_positive_vdw(m_inf=m_inf, strict=strict, eps=eps)
 
 
 

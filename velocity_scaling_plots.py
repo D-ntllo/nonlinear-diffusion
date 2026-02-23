@@ -20,7 +20,7 @@ Public API:
     - build_sigma_m(F, SO, V, order=1|2) -> (sigma(r,theta), m(r,theta))
     - sigma_residual_L2(F, sigma, m, r, th, *, scale_theta=None) -> float
     - m_residual_L2(F, sigma, m, r, th, D_of_m, K0, V, *, scale_theta=None) -> float
-    - compute_velocity_scaling(F, SO, D_of_m, D0, Vs=None, Nr=180, Nth=128)
+    - compute_velocity_scaling(F, SO, D_of_m, D0, Vs=None, Nr=180, Nth=128, r_min_mode='eps')
          -> dict with arrays {'V','sigma_F','sigma_SO','m_F','m_SO'}
     - plot_velocity_scaling(result_dict, *, save=False, prefix='velocity_scaling', show=True)
 
@@ -166,16 +166,28 @@ def m_residual_L2(F, sigma: Callable, m: Callable, r: np.ndarray, th: np.ndarray
 
 def compute_velocity_scaling(F, SO, D: Callable, Dp: Callable,
                              Vs: Optional[np.ndarray] = None,
-                             Nr: int = 180, Nth: int = 128):
+                             Nr: int = 180, Nth: int = 128,
+                             r_min_mode: str = "eps"):
     """
     Compute L2 residuals vs V for both equations.
+    r_min_mode='eps' uses max(SO.A.r[0], SO.B.r[0]) for the radial grid start.
+    This avoids center-row interpolation artifacts in second-order profiles.
     Returns dict with arrays: {'V','sigma_F','sigma_SO','m_F','m_SO'}.
     """
     if Vs is None:
         Vs = np.geomspace(1e-7, 1e-1, 20)
     Vs = np.asarray(Vs, dtype=float)
 
-    r  = np.linspace(0.0, F.R0, Nr)
+    # SO radial grids are built starting at a small epsilon > 0.
+    # Using the same lower bound avoids center-row interpolation artifacts.
+    if r_min_mode == "eps":
+        r_min = float(max(SO.A.r[0], SO.B.r[0], 1e-12))
+    elif r_min_mode == "zero":
+        r_min = 0.0
+    else:
+        raise ValueError("r_min_mode must be 'eps' or 'zero'.")
+
+    r  = np.linspace(r_min, F.R0, Nr)
     th = np.linspace(0.0, 2*np.pi, Nth, endpoint=False)
     K0 = F.Khat0 * D(F.m0)
 
@@ -195,6 +207,8 @@ def compute_velocity_scaling(F, SO, D: Callable, Dp: Callable,
         'sigma_SO': np.array(sig_SO),
         'm_F':      np.array(m_F),
         'm_SO':     np.array(m_SO),
+        'r_min':    r_min,
+        'r_min_mode': r_min_mode,
     }
 
 def compare_first_second_order_fields(F, SO, D, Dp, V: float,
