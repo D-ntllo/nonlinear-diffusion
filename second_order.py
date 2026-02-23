@@ -39,17 +39,36 @@ def make_forcings_A_B_func(F):
     m, mp, mpp = F.m11, F.m11p, F.m11pp
     Khat0 = F.Khat0
 
-    '''
-    # A-piece pieces (projected to n=0 and n=2)
-    '''
-    qA0 = lambda r: -(0.5*(mp(r)+m(r)/r) - Khat0/2*(mp(r)*sp(r)+m(r)*spp(r)+m(r)*sp(r)/r))
-    qA2 = lambda r: -(0.5*(mp(r)-m(r)/r) - Khat0/2*(mp(r)*sp(r)+m(r)*spp(r)+m(r)*sp(r)/r-2*m(r)*s(r)/r**2))
-    '''
-    # B-piece: −(1/2) Δ(m̂1^2). With m̂1^2 = 1/2 m^2 (1 + cos 2θ):
-    # projections give qB0 = −¼ L0(m^2), qB2 = −¼ L2(m^2)
-    '''
-    qB0 = lambda r: -(0.5*(mp(r)*mp(r)+m(r)*mpp(r)+1/r*m(r)*mp(r)))
-    qB2 = lambda r: -(0.5*(mp(r)*mp(r)+m(r)*mpp(r)+1/r*m(r)*mp(r))-m(r)*m(r)/r**2)
+    def _eval_terms(r):
+        rr = np.asarray(r, dtype=float)
+        sv, spv, sppv = s(rr), sp(rr), spp(rr)
+        mv, mpv, mppv = m(rr), mp(rr), mpp(rr)
+
+        # Use removable limits at r=0: m/r -> m'(0), s/r -> s'(0).
+        m_over_r = np.divide(mv, rr, out=np.zeros_like(rr, dtype=float), where=rr != 0.0)
+        m_over_r = np.where(rr == 0.0, mpv, m_over_r)
+        s_over_r = np.divide(sv, rr, out=np.zeros_like(rr, dtype=float), where=rr != 0.0)
+        s_over_r = np.where(rr == 0.0, spv, s_over_r)
+
+        return sv, spv, sppv, mv, mpv, mppv, m_over_r, s_over_r
+
+    # A-piece forcings (n=0 and n=2 projections)
+    def qA0(r):
+        sv, spv, sppv, mv, mpv, _mppv, m_over_r, _s_over_r = _eval_terms(r)
+        return -(0.5 * (mpv + m_over_r) - 0.5 * Khat0 * (mpv * spv + mv * sppv + m_over_r * spv))
+
+    def qA2(r):
+        sv, spv, sppv, mv, mpv, _mppv, m_over_r, s_over_r = _eval_terms(r)
+        return -(0.5 * (mpv - m_over_r) - 0.5 * Khat0 * (mpv * spv + mv * sppv + m_over_r * spv - 2.0 * m_over_r * s_over_r))
+
+    # B-piece: −(1/2) Δ(m̂1^2) with projections qB0 = −1/4 L0(m^2), qB2 = −1/4 L2(m^2)
+    def qB0(r):
+        _sv, _spv, _sppv, mv, mpv, mppv, m_over_r, _s_over_r = _eval_terms(r)
+        return -(0.5 * (mpv * mpv + mv * mppv + m_over_r * mpv))
+
+    def qB2(r):
+        _sv, _spv, _sppv, mv, mpv, mppv, m_over_r, _s_over_r = _eval_terms(r)
+        return -(0.5 * (mpv * mpv + mv * mppv + m_over_r * mpv) - m_over_r * m_over_r)
 
 
     return dict(qA0=qA0, qA2=qA2, qB0=qB0, qB2=qB2)
@@ -119,21 +138,48 @@ def _Ln_inverse_neumann(
         return u
 
     else:
-        # n = 0: u(r) = C - ∫_0^r s ln s q(s) ds + (ln r) ∫_0^r s q(s) ds
-        F1 = _cumtrapz_from_zero(rr * qv, rr)            # ∫_0^r s q(s) ds
-        ln_r = np.log(rr)
-        F2 = _cumtrapz_from_zero(rr * ln_r * qv, rr)     # ∫_0^r s ln s q(s) ds
+        # n = 0: solve u'' + (1/r) u' = q, regular at 0.
+        # Use stable method:
+        #   A(r) = ∫_0^r s q(s) ds
+        #   u'(r) = A(r)/r  (r>0), u'(0)=0
+        #   u(r) = C + ∫_0^r u'(t) dt
+        #
+        # Neumann at R0 is not freely prescribable; compatibility:
+        #   u'(R0) = A(R0)/R0 must equal neuman_bc
 
-        # Compatibility for regular Neumann: u'(R0) = F1(R0)/R0 must equal neuman_bc
-        comp = F1[-1] / R0
-        # Keep behavior non-intrusive: warn if incompatible (you may raise instead)
+        # If grid doesn't include r=0, prepend it to avoid any 0-issues cleanly
+        if rr[0] != 0.0:
+            rr_ext = np.concatenate(([0.0], rr))
+            qv_ext = q(rr_ext)
+
+            A_ext = _cumtrapz_from_zero(rr_ext * qv_ext, rr_ext)  # A(r)
+            uprime_ext = np.zeros_like(rr_ext)
+            uprime_ext[1:] = A_ext[1:] / rr_ext[1:]              # safe division
+
+            # Compatibility check at R0 (assumes rr[-1] ~ R0)
+            comp = A_ext[-1] / R0
+            if abs(comp - neuman_bc) > 1e-10 * (abs(comp) + 1.0):
+                pass  # warn/raise if you want
+
+            C = 0.0  # gauge (constant nullspace)
+            u_ext = C + _cumtrapz_from_zero(uprime_ext, rr_ext)
+
+            return u_ext[1:]  # drop the prepended 0 entry
+
+        # Standard case: grid starts at 0
+        A = _cumtrapz_from_zero(rr * qv, rr)   # A(r) = ∫_0^r s q(s) ds
+
+        uprime = np.zeros_like(rr)
+        uprime[1:] = A[1:] / rr[1:]            # u'(r) = A(r)/r for r>0
+        uprime[0]  = 0.0                       # regularity: u'(0)=0
+
+        comp = A[-1] / R0
         if abs(comp - neuman_bc) > 1e-10 * (abs(comp) + 1.0):
-            # print or log a warning if you have a logger; we just pass silently here:
-            # warnings.warn(f"n=0 Neumann target {neuman_bc} incompatible with forcing; using u'(R0)={comp}.")
-            pass
+            pass  # warn/raise if you want
 
         C = 0.0  # gauge (constant nullspace)
-        u = C - F2 + ln_r * F1
+        u = C + _cumtrapz_from_zero(uprime, rr)
+
         return u
 
 # ---- Solve σ from (L_n + κ^2)σ = f with σ'(R0)=0 using modified-Bessel integral repr. ----
@@ -254,15 +300,15 @@ def compute_second_order(
     
     def _update_solns_by_A_new(sigma_sol: np.ndarray, m_sol: np.ndarray, sR0_sol: float) -> Tuple[np.ndarray, np.ndarray, float]:
         
-        int_m = _cumtrapz_from_zero(m_sol*r,r)[-1]
+        int_m = _cumtrapz_from_zero(2*m_sol*r,r)[-1]
 
-        rho20Atilde= - sR0_sol / (2.0*np.pi + gamma/R0**2)
+        rho20Atilde= sR0_sol / (-2.0*np.pi*R0 + gamma/R0**2)
 
-        Cm_num = 4*np.pi*m0*R0*rho20Atilde + 2*np.pi*int_m
+        Cm_num = -(4*np.pi*m0*R0*rho20Atilde + 2*np.pi*int_m)
 
-        Cm_den = 4*np.pi*m0*R0*(-P*1/(2.0*np.pi + gamma/R0**2)) + 2*np.pi*R0**2
+        Cm_den = 4*np.pi*m0*R0*(1/(- 2.0*np.pi* R0 + gamma/R0**2))*P + 2*np.pi*R0**2
 
-        Cm = - Cm_num / Cm_den
+        Cm = Cm_num / Cm_den
 
         Cs = P*Cm
 
@@ -274,7 +320,7 @@ def compute_second_order(
     # Map σ(R0) -> ρ via (149).4
     rho20A = sR0_0A / (-2.0*np.pi*R0 + gamma/R0**2) if 0 in modes else 0.0
     rho22A =   -(R0**2)*sR0_2A / (3.0*gamma)       if 2 in modes else 0.0
-    rho20B = sR0_0B / (-2.0*np.pi + gamma/R0**2) if 0 in modes else 0.0
+    rho20B = sR0_0B / (-2.0*np.pi*R0 + gamma/R0**2) if 0 in modes else 0.0
     rho22B =   -(R0**2)*sR0_2B / (3.0*gamma)       if 2 in modes else 0.0
 
     A_piece = SecondOrderPiece(r=r, m0=m0A, m2=m2A, s0=s0A, s2=s2A)
